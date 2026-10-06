@@ -2,12 +2,12 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.2.0
+Version: 1.3.0
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.2.0');
+define('TPM_VERSION','1.3.0');
 function tpm_menu(){
  add_menu_page('Terttus Commerce','Terttus Commerce','manage_woocommerce','terttus-commerce','tpm_dashboard','dashicons-store',56);
  add_submenu_page('terttus-commerce','Dashboard','Dashboard','manage_woocommerce','terttus-commerce','tpm_dashboard');
@@ -68,7 +68,7 @@ function tpm_screen(){
  if(isset($_GET['saved']))echo'<div class="notice notice-success is-dismissible"><p>Produktet er gemt.</p></div>';
  $cats=get_terms(['taxonomy'=>'product_cat','hide_empty'=>false]);$selected=$p?$p->get_category_ids():[];$gallery=$p?$p->get_gallery_image_ids():[];
  ?><div class="wrap tpm"><div class="tpm-head"><div><h1><?php echo $p?'Redigér produkt':'Nyt produkt';?></h1><p>En enkel arbejdsgang, gemt direkte i WooCommerce.</p></div><div class="tpm-head-actions"><a class="button" href="<?php echo esc_url(admin_url('edit.php?post_type=product'));?>">Alle produkter</a><?php if($p):?><a class="button" href="<?php echo esc_url(get_permalink($p->get_id()));?>" target="_blank">Se produkt</a><?php endif;?><span class="tpm-badge">Terttus</span></div></div>
- <form method="post" action="<?php echo esc_url(admin_url('admin-post.php'));?>"><?php wp_nonce_field('tpm_save');?><input type="hidden" name="action" value="tpm_save_product"><input type="hidden" name="product_id" value="<?php echo $id;?>">
+ <section class="tpm-card tpm-importer"><div class="tpm-import-head"><div><span class="tpm-eyebrow">Hurtig import</span><h2>Indsæt produktdata</h2><p>Indsæt kopieret tekst fra DCS eller en anden leverandør. Vi forsøger at finde navn, varenummer, EAN, mærke, priser og billedlinks.</p></div><button type="button" class="button button-primary tpm-parse-import">Analysér data</button></div><textarea id="tpm-import-text" rows="8" placeholder="Indsæt produktdata her..."></textarea><div id="tpm-import-preview" class="tpm-import-preview" hidden></div></section><form method="post" action="<?php echo esc_url(admin_url('admin-post.php'));?>"><?php wp_nonce_field('tpm_save');?><input type="hidden" name="action" value="tpm_save_product"><input type="hidden" name="product_id" value="<?php echo $id;?>">
  <div class="tpm-layout"><main>
  <section class="tpm-card"><h2>1. Grundinfo</h2><div class="tpm-grid"><label class="wide">Produktnavn<input required name="name" value="<?php echo esc_attr(tpm_val($p,'name'));?>"></label><label>SKU / varenummer<input name="sku" value="<?php echo esc_attr(tpm_val($p,'sku'));?>"></label><label>EAN / GTIN<input name="ean" value="<?php echo esc_attr(tpm_val($p,'ean'));?>"></label><label>Mærke<input name="brand" value="<?php echo esc_attr(tpm_val($p,'brand'));?>"></label><label>Kategori<select name="category"><option value="">Vælg kategori</option><?php foreach($cats as$c)echo'<option value="'.intval($c->term_id).'" '.selected(in_array($c->term_id,$selected),true,false).'>'.esc_html($c->name).'</option>';?></select></label></div></section>
  <section class="tpm-card"><h2>2. Billeder</h2><div class="tpm-url-import"><label>Hovedbillede fra URL<input type="url" id="tpm-main-url" name="main_image_url" placeholder="https://leverandoer.dk/billede.jpg"></label><button type="button" class="button tpm-preview-url">Vis preview</button><p class="description">Når produktet gemmes, downloades billedet til WordPress mediebibliotek.</p><label>Galleri fra URL'er<textarea name="gallery_image_urls" rows="4" placeholder="Én billed-URL pr. linje"></textarea></label></div><input type="hidden" id="tpm-image-id" name="image_id" value="<?php echo intval(tpm_val($p,'image'));?>"><input type="hidden" id="tpm-gallery-ids" name="gallery_ids" value="<?php echo esc_attr(implode(',',$gallery));?>"><div class="tpm-media"><div id="tpm-main-preview" class="tpm-image-preview"><?php if(tpm_val($p,'image'))echo wp_get_attachment_image(tpm_val($p,'image'),'medium');?></div><div><button type="button" class="button tpm-pick-main">Vælg hovedbillede</button><button type="button" class="button tpm-pick-gallery">Vælg galleri</button><p class="description">Bruger WordPress' eget mediebibliotek.</p></div></div><div id="tpm-gallery-preview" class="tpm-gallery"><?php foreach($gallery as$g)echo wp_get_attachment_image($g,'thumbnail');?></div></section>
