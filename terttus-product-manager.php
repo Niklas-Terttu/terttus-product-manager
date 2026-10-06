@@ -2,15 +2,66 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.0.0
+Version: 1.1.0
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.0.0');
-function tpm_menu(){add_submenu_page('woocommerce','Terttus Product Manager','Produkt Manager','edit_products','terttus-product-manager','tpm_screen');}add_action('admin_menu','tpm_menu',30);
-function tpm_assets($h){if(strpos($h,'terttus-product-manager')===false)return;wp_enqueue_media();wp_enqueue_style('tpm',plugins_url('assets/admin.css',__FILE__),[],TPM_VERSION);wp_enqueue_script('tpm',plugins_url('assets/admin.js',__FILE__),['jquery'],TPM_VERSION,true);}add_action('admin_enqueue_scripts','tpm_assets');
+define('TPM_VERSION','1.1.0');
+function tpm_menu(){
+ add_menu_page('Terttus Commerce','Terttus Commerce','manage_woocommerce','terttus-commerce','tpm_dashboard','dashicons-store',56);
+ add_submenu_page('terttus-commerce','Dashboard','Dashboard','manage_woocommerce','terttus-commerce','tpm_dashboard');
+ add_submenu_page('terttus-commerce','Produkter','Produkter','edit_products','terttus-products','tpm_products');
+ add_submenu_page('terttus-commerce','Nyt produkt','Nyt produkt','edit_products','terttus-product-manager','tpm_screen');
+ add_submenu_page('terttus-commerce','Ordrer','Ordrer','manage_woocommerce','terttus-orders','tpm_orders');
+ add_submenu_page('terttus-commerce','Lager','Lager','manage_woocommerce','terttus-stock','tpm_stock');
+ add_submenu_page('terttus-commerce','Leverandører','Leverandører','manage_woocommerce','terttus-suppliers','tpm_suppliers');
+}add_action('admin_menu','tpm_menu',30);
+function tpm_assets($h){if(strpos($h,'terttus')===false)return;wp_enqueue_media();wp_enqueue_style('tpm',plugins_url('assets/admin.css',__FILE__),[],TPM_VERSION);wp_enqueue_script('tpm',plugins_url('assets/admin.js',__FILE__),['jquery'],TPM_VERSION,true);}add_action('admin_enqueue_scripts','tpm_assets');
 function tpm_val($p,$k,$d=''){if(!$p)return $d;if(in_array($k,['ean','brand','cost','supplier','supplier_sku','supplier_url'],true))return get_post_meta($p->get_id(),'_tpm_'.$k,true);$m=['name'=>'get_name','sku'=>'get_sku','price'=>'get_regular_price','sale'=>'get_sale_price','stock'=>'get_stock_quantity','stock_status'=>'get_stock_status','short_description'=>'get_short_description','description'=>'get_description','image'=>'get_image_id'];return isset($m[$k])?$p->{$m[$k]}():$d;}
+
+function tpm_money($v){return wc_price((float)$v,['decimals'=>2]);}
+function tpm_admin_head($title,$subtitle=''){echo '<div class="wrap tpm"><div class="tpm-head"><div><h1>'.esc_html($title).'</h1><p>'.esc_html($subtitle).'</p></div><div class="tpm-head-actions"><a class="button button-primary" href="'.esc_url(admin_url('admin.php?page=terttus-product-manager')).'">+ Nyt produkt</a><span class="tpm-badge">Terttus Commerce</span></div></div>';tpm_nav();}
+function tpm_nav(){$items=['terttus-commerce'=>'Dashboard','terttus-products'=>'Produkter','terttus-orders'=>'Ordrer','terttus-stock'=>'Lager','terttus-suppliers'=>'Leverandører'];$cur=sanitize_key($_GET['page']??'');echo '<nav class="tpm-nav">';foreach($items as$slug=>$label)echo '<a class="'.($cur===$slug?'active':'').'" href="'.esc_url(admin_url('admin.php?page='.$slug)).'">'.esc_html($label).'</a>';echo '</nav>';}
+function tpm_dashboard(){
+ if(!class_exists('WooCommerce'))return;
+ tpm_admin_head('Dashboard','Dit daglige overblik over webshoppen.');
+ $today=(new DateTime('today',wp_timezone()))->format('Y-m-d H:i:s');
+ $orders=wc_get_orders(['limit'=>-1,'date_created'=>'>='.$today,'status'=>array_keys(wc_get_order_statuses())]);
+ $revenue=0;$profit=0;foreach($orders as$o){$revenue+=(float)$o->get_total();foreach($o->get_items() as$i){$p=$i->get_product();if($p){$cost=(float)get_post_meta($p->get_id(),'_tpm_cost',true);$profit+=((float)$i->get_total()/1.25)-($cost*$i->get_quantity());}}}
+ $processing=wc_orders_count('processing');$onhold=wc_orders_count('on-hold');
+ $low=wc_get_products(['limit'=>-1,'stock_status'=>'instock','manage_stock'=>true,'return'=>'objects']);$low=array_filter($low,fn($p)=>$p->get_stock_quantity()!==null&&$p->get_stock_quantity()<=3);
+ echo '<div class="tpm-kpis"><div class="tpm-kpi"><span>Omsætning i dag</span><strong>'.wp_kses_post(tpm_money($revenue)).'</strong></div><div class="tpm-kpi"><span>Ordrer i dag</span><strong>'.count($orders).'</strong></div><div class="tpm-kpi"><span>Est. bruttoavance</span><strong>'.wp_kses_post(tpm_money($profit)).'</strong></div><div class="tpm-kpi"><span>Kræver handling</span><strong>'.($processing+$onhold+count($low)).'</strong></div></div>';
+ echo '<div class="tpm-two"><section class="tpm-card"><h2>Kræver handling</h2><div class="tpm-action-row"><span>Ordrer under behandling</span><b>'.$processing.'</b></div><div class="tpm-action-row"><span>Ordrer på hold</span><b>'.$onhold.'</b></div><div class="tpm-action-row"><span>Varer med lav lagerbeholdning</span><b>'.count($low).'</b></div></section><section class="tpm-card"><h2>Hurtige handlinger</h2><div class="tpm-quick"><a href="'.esc_url(admin_url('admin.php?page=terttus-product-manager')).'">+ Opret vare</a><a href="'.esc_url(admin_url('admin.php?page=terttus-orders')).'">Se ordrer</a><a href="'.esc_url(admin_url('admin.php?page=terttus-stock')).'">Tjek lager</a><a href="'.esc_url(admin_url('admin.php?page=terttus-suppliers')).'">Leverandører</a></div></section></div></div>';
+}
+function tpm_products(){
+ tpm_admin_head('Produkter','Et enklere produktkatalog oven på WooCommerce.');
+ $products=wc_get_products(['limit'=>100,'orderby'=>'date','order'=>'DESC','status'=>['publish','draft','private']]);
+ echo '<section class="tpm-card tpm-table-card"><table class="tpm-table"><thead><tr><th>Produkt</th><th>SKU</th><th>Lager</th><th>Pris</th><th>Leverandør</th><th></th></tr></thead><tbody>';
+ foreach($products as$p){$img=$p->get_image_id()?wp_get_attachment_image($p->get_image_id(),'thumbnail'):'';$sup=get_post_meta($p->get_id(),'_tpm_supplier',true);echo '<tr><td><div class="tpm-product-cell">'.$img.'<div><strong>'.esc_html($p->get_name()).'</strong><small>'.esc_html($p->get_status()).'</small></div></div></td><td>'.esc_html($p->get_sku()?:'—').'</td><td>'.esc_html($p->managing_stock()?($p->get_stock_quantity().' stk.'):$p->get_stock_status()).'</td><td>'.wp_kses_post($p->get_price_html()).'</td><td>'.esc_html($sup?:'—').'</td><td><a class="button" href="'.esc_url(admin_url('admin.php?page=terttus-product-manager&product_id='.$p->get_id())).'">Redigér</a></td></tr>';}
+ echo '</tbody></table></section></div>';
+}
+function tpm_orders(){
+ tpm_admin_head('Ordrer','Fra ny ordre til pakket og afsluttet.');
+ $orders=wc_get_orders(['limit'=>50,'orderby'=>'date','order'=>'DESC']);
+ echo '<div class="tpm-order-lanes"><div><span>Behandler</span><strong>'.wc_orders_count('processing').'</strong></div><div><span>På hold</span><strong>'.wc_orders_count('on-hold').'</strong></div><div><span>Afsluttet</span><strong>'.wc_orders_count('completed').'</strong></div></div><section class="tpm-card tpm-table-card"><table class="tpm-table"><thead><tr><th>Ordre</th><th>Kunde</th><th>Dato</th><th>Status</th><th>Total</th><th></th></tr></thead><tbody>';
+ foreach($orders as$o){echo '<tr><td><strong>#'.esc_html($o->get_order_number()).'</strong></td><td>'.esc_html(trim($o->get_billing_first_name().' '.$o->get_billing_last_name())?:'Gæst').'</td><td>'.esc_html($o->get_date_created()?$o->get_date_created()->date_i18n('d/m/Y H:i'):'—').'</td><td><span class="tpm-status">'.esc_html(wc_get_order_status_name($o->get_status())).'</span></td><td>'.wp_kses_post($o->get_formatted_order_total()).'</td><td><a class="button" href="'.esc_url($o->get_edit_order_url()).'">Åbn</a></td></tr>';}
+ echo '</tbody></table></section></div>';
+}
+function tpm_stock(){
+ tpm_admin_head('Lager','Se lager, kostpris og estimeret avance samlet.');
+ $products=wc_get_products(['limit'=>200,'status'=>['publish','draft'],'orderby'=>'title','order'=>'ASC']);
+ echo '<section class="tpm-card tpm-table-card"><table class="tpm-table"><thead><tr><th>Produkt</th><th>SKU</th><th>Status</th><th>Antal</th><th>Kostpris</th><th>Salgspris</th><th>Avance</th></tr></thead><tbody>';
+ foreach($products as$p){$cost=(float)get_post_meta($p->get_id(),'_tpm_cost',true);$price=(float)$p->get_regular_price();$net=$price/1.25;$margin=$net>0?(($net-$cost)/$net*100):0;echo '<tr><td><a href="'.esc_url(admin_url('admin.php?page=terttus-product-manager&product_id='.$p->get_id())).'">'.esc_html($p->get_name()).'</a></td><td>'.esc_html($p->get_sku()?:'—').'</td><td>'.esc_html(wc_get_product_stock_status_options()[$p->get_stock_status()]??$p->get_stock_status()).'</td><td>'.esc_html($p->managing_stock()?$p->get_stock_quantity():'—').'</td><td>'.wp_kses_post(tpm_money($cost)).'</td><td>'.wp_kses_post(tpm_money($price)).'</td><td>'.esc_html(number_format_i18n($margin,1)).'%</td></tr>';}
+ echo '</tbody></table></section></div>';
+}
+function tpm_suppliers(){
+ tpm_admin_head('Leverandører','Overblik over de leverandører, der er knyttet til dine varer.');
+ $products=wc_get_products(['limit'=>-1,'status'=>['publish','draft']]);$sup=[];
+ foreach($products as$p){$name=trim((string)get_post_meta($p->get_id(),'_tpm_supplier',true));if(!$name)continue;if(!isset($sup[$name]))$sup[$name]=['count'=>0,'value'=>0];$sup[$name]['count']++;$sup[$name]['value']+=(float)get_post_meta($p->get_id(),'_tpm_cost',true)*max(0,(int)$p->get_stock_quantity());}
+ echo '<div class="tpm-supplier-grid">';if(!$sup)echo '<section class="tpm-card"><h2>Ingen leverandører endnu</h2><p>Tilføj fx DCS på dine produkter. Så samler vi automatisk overblikket her.</p></section>';foreach($sup as$name=>$d)echo '<section class="tpm-card"><span class="tpm-eyebrow">Leverandør</span><h2>'.esc_html($name).'</h2><p><strong>'.$d['count'].'</strong> produkter</p><p>Lagerets kostværdi: '.wp_kses_post(tpm_money($d['value'])).'</p></section>';echo '</div></div>';
+}
+
 function tpm_screen(){
  if(!class_exists('WooCommerce')){echo'<div class="notice notice-error"><p>WooCommerce skal være aktivt.</p></div>';return;}
  $id=absint($_GET['product_id']??0);$p=$id?wc_get_product($id):null;if($id&&!$p)wp_die('Produktet blev ikke fundet.');
