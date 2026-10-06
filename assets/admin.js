@@ -1,0 +1,1 @@
+jQuery(function($){function calc(){let c=parseFloat($('#tpm-cost').val()),p=parseFloat($('#tpm-price').val());if(!isFinite(c)||!isFinite(p)||p<=0){$('#tpm-margin').text('—');return;}let net=p/1.25,profit=net-c,margin=profit/net*100;$('#tpm-margin').text(profit.toFixed(2)+' kr. · '+margin.toFixed(1)+'%');}$('#tpm-cost,#tpm-price').on('input',calc);});
