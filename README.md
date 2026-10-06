@@ -1,12 +1,17 @@
 # Terttus Product Manager
 
-A cleaner WooCommerce product creation workflow for Terttus.dk.
+A streamlined WooCommerce product workflow for Terttus.dk.
 
-## 0.1.0
-- Dedicated WooCommerce admin page
-- Product basics, category, SKU, EAN/GTIN and brand
-- Cost, retail and sale pricing with margin preview
-- Stock and supplier fields prepared for manual DCS workflow
+## 1.0.0
+- Create and edit native WooCommerce simple products
+- Main image and gallery using WordPress Media Library
+- SKU, EAN/GTIN, brand and category
+- Cost, retail and sale price with live margin calculation
+- Stock status and quantity
+- Internal supplier/DCS fields
 - Short and long descriptions
-- Draft/publish workflow
-- Saves as native WooCommerce simple products
+- Flexible product specification rows
+- Product readiness checklist
+- Draft/publish workflow and storefront preview link
+- Duplicate product workflow
+- Responsive Terttus admin UI
