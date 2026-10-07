@@ -7,7 +7,7 @@ jQuery(function($){
     $('#tpm-margin').text(profit.toFixed(2)+' kr. · '+margin.toFixed(1)+'%');
   }
   function check(){
-    let x={name:$('[name=name]').val().trim(),price:parseFloat($('#tpm-price').val())>0,image:parseInt($('#tpm-image-id').val())>0||$('#tpm-main-url').val().trim()!=='',category:$('[name=category]').val()};
+    let x={name:$('[name=name]').val().trim(),price:parseFloat($('#tpm-price').val())>0,image:parseInt($('#tpm-image-id').val())>0||$('#tpm-main-url').val().trim()!=='',category:$('[name="categories[]"]:checked').length>0};
     Object.keys(x).forEach(k=>$('[data-check='+k+']').toggleClass('ok',!!x[k]));
   }
 
@@ -79,7 +79,7 @@ jQuery(function($){
   });
 
   $('#tpm-cost,#tpm-price').on('input',function(){calc();check();});
-  $('[name=name],[name=category],#tpm-main-url').on('input change',check);
+  $('[name=name],[name="categories[]"],#tpm-main-url').on('input change',check);
   $('.tpm-preview-url').on('click',function(){let u=$('#tpm-main-url').val().trim();if(u)$('#tpm-main-preview').html('<img src="'+esc(u)+'" alt="">');check();});
   $('.tpm-pick-main').on('click',function(){let f=wp.media({title:'Vælg hovedbillede',multiple:false,library:{type:'image'}});f.on('select',function(){let a=f.state().get('selection').first().toJSON();$('#tpm-image-id').val(a.id);$('#tpm-main-preview').html('<img src="'+(a.sizes&&a.sizes.medium?a.sizes.medium.url:a.url)+'">');check();});f.open();});
   $('.tpm-pick-gallery').on('click',function(){let f=wp.media({title:'Vælg produktgalleri',multiple:true,library:{type:'image'}});f.on('select',function(){let a=f.state().get('selection').toJSON();$('#tpm-gallery-ids').val(a.map(x=>x.id).join(','));$('#tpm-gallery-preview').html(a.map(x=>'<img src="'+(x.sizes&&x.sizes.thumbnail?x.sizes.thumbnail.url:x.url)+'">').join(''));});f.open();});
