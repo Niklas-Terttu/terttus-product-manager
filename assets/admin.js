@@ -103,13 +103,31 @@ jQuery(function($){
   clearTimeout(saveTimer);$('.tpm-cat-save-state').text('Gemmer…');
   saveTimer=setTimeout(function(){$.post(TPM.ajax,{action:'tpm_cat_structure',nonce:TPM.catNonce,structure:JSON.stringify(serializeTree())},function(r){$('.tpm-cat-save-state').text(r.success?'Gemt ✓':'Kunne ikke gemme');if(!r.success&&r.data&&r.data.message)alert(r.data.message);});},180);
  }
+ function refreshParents(){$('#tpm-category-tree .tpm-cat-level').each(function(){let $l=$(this),$owner=$l.parent('.tpm-cat-node');$l.attr('data-parent',$owner.length?$owner.data('id'):0);});}
  function initSortable(){
-  if(!$.fn.sortable)return;
-  $('.tpm-cat-level').sortable('destroy').sortable({
-   connectWith:'.tpm-cat-level',items:'>.tpm-cat-node',handle:'.tpm-cat-handle',placeholder:'tpm-cat-placeholder',tolerance:'pointer',forcePlaceholderSize:true,dropOnEmpty:true,
-   start:function(e,ui){ui.item.addClass('is-dragging');},
-   stop:function(e,ui){ui.item.removeClass('is-dragging');$('.tpm-cat-level').each(function(){let $l=$(this),$owner=$l.parent('.tpm-cat-node');$l.attr('data-parent',$owner.length?$owner.data('id'):0);});saveStructure();}
-  });
+  let dragged=null;
+  $('#tpm-category-tree .tpm-cat-node').attr('draggable','true');
+  $('#tpm-category-tree').off('.tpmDrag')
+   .on('dragstart.tpmDrag','.tpm-cat-node',function(e){
+    if(!$(e.target).closest('.tpm-cat-handle').length){e.preventDefault();return;}
+    dragged=this;$(this).addClass('is-dragging');e.originalEvent.dataTransfer.effectAllowed='move';e.originalEvent.dataTransfer.setData('text/plain',String($(this).data('id')));
+   })
+   .on('dragend.tpmDrag','.tpm-cat-node',function(){$(this).removeClass('is-dragging');$('.tpm-drop-before,.tpm-drop-after,.tpm-drop-inside').removeClass('tpm-drop-before tpm-drop-after tpm-drop-inside');dragged=null;})
+   .on('dragover.tpmDrag','.tpm-cat-row',function(e){
+    if(!dragged||$(dragged).is($(this).closest('.tpm-cat-node'))||$.contains(dragged,this))return;
+    e.preventDefault();let ev=e.originalEvent,rect=this.getBoundingClientRect(),y=ev.clientY-rect.top,$row=$(this);
+    $('.tpm-drop-before,.tpm-drop-after,.tpm-drop-inside').removeClass('tpm-drop-before tpm-drop-after tpm-drop-inside');
+    if(y<rect.height*.25)$row.addClass('tpm-drop-before');else if(y>rect.height*.75)$row.addClass('tpm-drop-after');else $row.addClass('tpm-drop-inside');
+    ev.dataTransfer.dropEffect='move';
+   })
+   .on('drop.tpmDrag','.tpm-cat-row',function(e){
+    if(!dragged)return;e.preventDefault();e.stopPropagation();let $targetNode=$(this).closest('.tpm-cat-node'),$row=$(this),$drag=$(dragged);
+    if($drag.is($targetNode)||$.contains(dragged,$targetNode[0]))return;
+    if($row.hasClass('tpm-drop-before'))$drag.insertBefore($targetNode);
+    else if($row.hasClass('tpm-drop-after'))$drag.insertAfter($targetNode);
+    else {let $children=$targetNode.children('.tpm-cat-level');if(!$children.length)$children=$('<div class="tpm-cat-level"></div>').appendTo($targetNode);$children.removeClass('is-collapsed').append($drag);$targetNode.children('.tpm-cat-row').find('.tpm-cat-collapse').removeClass('is-empty').text('▾');}
+    $('.tpm-drop-before,.tpm-drop-after,.tpm-drop-inside').removeClass('tpm-drop-before tpm-drop-after tpm-drop-inside');refreshParents();saveStructure();dragged=null;
+   });
  }
  $(document).on('click','.tpm-cat-new,.tpm-cat-reset',resetForm);
  $(document).on('click','.tpm-cat-add-child',function(){resetForm();$form.find('[name=parent]').val($(this).data('id'));$('#tpm-cat-editor-title').text('Ny underkategori under '+$(this).data('name'));});
