@@ -33,3 +33,6 @@
 
 /* 1.7.4 sale status */
 .tpm-sale-status.is-expired{background:#f4eeee;color:#8b4a4a}
+
+/* 1.7.6 sale diagnostics */
+.tpm-sale-debug{grid-column:1/-1;color:#708089;font-size:11px;margin-top:-4px}
