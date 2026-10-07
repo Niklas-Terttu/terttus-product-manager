@@ -87,3 +87,12 @@ jQuery(function($){
   $(document).on('click','.tpm-remove-spec',function(){$(this).closest('.tpm-spec').remove();});
   calc();check();
 });
+
+jQuery(function($){
+ function catFormReset(){let f=$('#tpm-cat-form')[0];if(!f)return;f.reset();$('[name=term_id]',f).val(0);$('[name=parent]',f).val(0);$('[name=mega]',f).prop('checked',true);$('#tpm-cat-editor-title').text('Ny kategori');$('.tpm-cat-message').text('');}
+ $(document).on('click','.tpm-cat-new,.tpm-cat-reset',catFormReset);
+ $(document).on('click','.tpm-cat-add-child',function(){catFormReset();$('[name=parent]','#tpm-cat-form').val($(this).data('id'));$('#tpm-cat-editor-title').text('Ny underkategori under '+$(this).data('name'));});
+ $(document).on('click','.tpm-cat-edit',function(){let id=$(this).data('id');$.post(TPM.ajax,{action:'tpm_cat_get',nonce:TPM.catNonce,id:id},function(r){if(!r.success)return;let d=r.data,f=$('#tpm-cat-form');f.find('[name=term_id]').val(d.id);f.find('[name=name]').val(d.name);f.find('[name=slug]').val(d.slug);f.find('[name=parent]').val(d.parent);f.find('[name=description]').val(d.description);f.find('[name=mega]').prop('checked',!!d.mega);$('#tpm-cat-editor-title').text('Redigér '+d.name);});});
+ $(document).on('submit','#tpm-cat-form',function(e){e.preventDefault();let $f=$(this),data=$f.serializeArray();data.push({name:'action',value:'tpm_cat_save'},{name:'nonce',value:TPM.catNonce});$f.find('button[type=submit]').prop('disabled',true);$.post(TPM.ajax,$.param(data),function(r){if(r.success){$('.tpm-cat-message').text(r.data.message+' Genindlæser…');location.reload();}else $('.tpm-cat-message').text(r.data&&r.data.message?r.data.message:'Kunne ikke gemme.');}).always(function(){$f.find('button[type=submit]').prop('disabled',false);});});
+ if($.fn.sortable){$('.tpm-cat-level').sortable({items:'>.tpm-cat-node',handle:'.tpm-cat-handle',update:function(){let ids=$(this).children('.tpm-cat-node').map(function(){return $(this).data('id');}).get();$.post(TPM.ajax,{action:'tpm_cat_order',nonce:TPM.catNonce,ids:ids});}});}
+});
