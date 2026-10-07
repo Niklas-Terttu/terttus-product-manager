@@ -2,12 +2,12 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.5.2
+Version: 1.5.3
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.5.2');
+define('TPM_VERSION','1.5.3');
 define('TPM_GITHUB_REPO','Niklas-Terttu/terttus-product-manager');
 define('TPM_PLUGIN_BASENAME',plugin_basename(__FILE__));
 
@@ -74,12 +74,6 @@ function tpm_plugin_action_links($links){
  $links[]='<a href="'.esc_url($url).'">Søg efter opdatering</a>';return $links;
 }
 add_filter('plugin_action_links_'.TPM_PLUGIN_BASENAME,'tpm_plugin_action_links');
-function tpm_private_repo_notice(){
- if(!current_user_can('manage_options')||tpm_github_token())return;
- echo '<div class="notice notice-warning"><p><strong>Terttus Commerce:</strong> Automatisk opdatering fra den private GitHub-repo kræver <code>TERTTUS_GITHUB_TOKEN</code> i wp-config.php. Tokenet skal kun have læseadgang til repo-indhold.</p></div>';
-}
-add_action('admin_notices','tpm_private_repo_notice');
-
 function tpm_menu(){
  add_menu_page('Terttus Commerce','Terttus Commerce','manage_woocommerce','terttus-commerce','tpm_dashboard','dashicons-store',56);
  add_submenu_page('terttus-commerce','Dashboard','Dashboard','manage_woocommerce','terttus-commerce','tpm_dashboard');
