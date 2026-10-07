@@ -2,27 +2,28 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.4.4
+Version: 1.5.0
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.4.4');
+define('TPM_VERSION','1.5.0');
 function tpm_menu(){
  add_menu_page('Terttus Commerce','Terttus Commerce','manage_woocommerce','terttus-commerce','tpm_dashboard','dashicons-store',56);
  add_submenu_page('terttus-commerce','Dashboard','Dashboard','manage_woocommerce','terttus-commerce','tpm_dashboard');
  add_submenu_page('terttus-commerce','Produkter','Produkter','edit_products','terttus-products','tpm_products');
  add_submenu_page('terttus-commerce','Nyt produkt','Nyt produkt','edit_products','terttus-product-manager','tpm_screen');
+ add_submenu_page('terttus-commerce','Kategorier','Kategorier','manage_product_terms','terttus-categories','tpm_categories');
  add_submenu_page('terttus-commerce','Ordrer','Ordrer','manage_woocommerce','terttus-orders','tpm_orders');
  add_submenu_page('terttus-commerce','Lager','Lager','manage_woocommerce','terttus-stock','tpm_stock');
  add_submenu_page('terttus-commerce','Leverandører','Leverandører','manage_woocommerce','terttus-suppliers','tpm_suppliers');
 }add_action('admin_menu','tpm_menu',30);
-function tpm_assets($h){if(strpos($h,'terttus')===false)return;wp_enqueue_media();wp_enqueue_style('tpm',plugins_url('assets/admin.css',__FILE__),[],TPM_VERSION);wp_enqueue_script('tpm',plugins_url('assets/admin.js',__FILE__),['jquery'],TPM_VERSION,true);wp_localize_script('tpm','TPM',['ajax'=>admin_url('admin-ajax.php'),'nonce'=>wp_create_nonce('tpm_dcs_import')]);}add_action('admin_enqueue_scripts','tpm_assets');
+function tpm_assets($h){if(strpos($h,'terttus')===false)return;wp_enqueue_media();wp_enqueue_style('tpm',plugins_url('assets/admin.css',__FILE__),[],TPM_VERSION);wp_enqueue_script('tpm',plugins_url('assets/admin.js',__FILE__),['jquery'],TPM_VERSION,true);wp_localize_script('tpm','TPM',['ajax'=>admin_url('admin-ajax.php'),'nonce'=>wp_create_nonce('tpm_dcs_import'),'catNonce'=>wp_create_nonce('tpm_categories')]);}add_action('admin_enqueue_scripts','tpm_assets');
 function tpm_val($p,$k,$d=''){if(!$p)return $d;if(in_array($k,['ean','brand','cost','supplier','supplier_sku','supplier_url'],true))return get_post_meta($p->get_id(),'_tpm_'.$k,true);$m=['name'=>'get_name','sku'=>'get_sku','price'=>'get_regular_price','sale'=>'get_sale_price','stock'=>'get_stock_quantity','stock_status'=>'get_stock_status','short_description'=>'get_short_description','description'=>'get_description','image'=>'get_image_id'];return isset($m[$k])?$p->{$m[$k]}():$d;}
 
 function tpm_money($v){return wc_price((float)$v,['decimals'=>2]);}
 function tpm_admin_head($title,$subtitle=''){echo '<div class="wrap tpm"><div class="tpm-head"><div><h1>'.esc_html($title).'</h1><p>'.esc_html($subtitle).'</p></div><div class="tpm-head-actions"><a class="button button-primary" href="'.esc_url(admin_url('admin.php?page=terttus-product-manager')).'">+ Nyt produkt</a><span class="tpm-badge">Terttus Commerce</span></div></div>';tpm_nav();}
-function tpm_nav(){$items=['terttus-commerce'=>'Dashboard','terttus-products'=>'Produkter','terttus-orders'=>'Ordrer','terttus-stock'=>'Lager','terttus-suppliers'=>'Leverandører'];$cur=sanitize_key($_GET['page']??'');echo '<nav class="tpm-nav">';foreach($items as$slug=>$label)echo '<a class="'.($cur===$slug?'active':'').'" href="'.esc_url(admin_url('admin.php?page='.$slug)).'">'.esc_html($label).'</a>';echo '</nav>';}
+function tpm_nav(){$items=['terttus-commerce'=>'Dashboard','terttus-products'=>'Produkter','terttus-categories'=>'Kategorier','terttus-orders'=>'Ordrer','terttus-stock'=>'Lager','terttus-suppliers'=>'Leverandører'];$cur=sanitize_key($_GET['page']??'');echo '<nav class="tpm-nav">';foreach($items as$slug=>$label)echo '<a class="'.($cur===$slug?'active':'').'" href="'.esc_url(admin_url('admin.php?page='.$slug)).'">'.esc_html($label).'</a>';echo '</nav>';}
 function tpm_dashboard(){
  if(!class_exists('WooCommerce'))return;
  tpm_admin_head('Dashboard','Dit daglige overblik over webshoppen.');
@@ -34,6 +35,45 @@ function tpm_dashboard(){
  echo '<div class="tpm-kpis"><div class="tpm-kpi"><span>Omsætning i dag</span><strong>'.wp_kses_post(tpm_money($revenue)).'</strong></div><div class="tpm-kpi"><span>Ordrer i dag</span><strong>'.count($orders).'</strong></div><div class="tpm-kpi"><span>Est. bruttoavance</span><strong>'.wp_kses_post(tpm_money($profit)).'</strong></div><div class="tpm-kpi"><span>Kræver handling</span><strong>'.($processing+$onhold+count($low)).'</strong></div></div>';
  echo '<div class="tpm-two"><section class="tpm-card"><h2>Kræver handling</h2><div class="tpm-action-row"><span>Ordrer under behandling</span><b>'.$processing.'</b></div><div class="tpm-action-row"><span>Ordrer på hold</span><b>'.$onhold.'</b></div><div class="tpm-action-row"><span>Varer med lav lagerbeholdning</span><b>'.count($low).'</b></div></section><section class="tpm-card"><h2>Hurtige handlinger</h2><div class="tpm-quick"><a href="'.esc_url(admin_url('admin.php?page=terttus-product-manager')).'">+ Opret vare</a><a href="'.esc_url(admin_url('admin.php?page=terttus-orders')).'">Se ordrer</a><a href="'.esc_url(admin_url('admin.php?page=terttus-stock')).'">Tjek lager</a><a href="'.esc_url(admin_url('admin.php?page=terttus-suppliers')).'">Leverandører</a></div></section></div></div>';
 }
+
+function tpm_category_branch($parent=0,$level=0){
+ $terms=get_terms(['taxonomy'=>'product_cat','hide_empty'=>false,'parent'=>$parent,'orderby'=>'menu_order','order'=>'ASC']);
+ if(is_wp_error($terms)||!$terms)return;
+ echo '<div class="tpm-cat-level" data-parent="'.intval($parent).'">';
+ foreach($terms as$t){
+  $thumb=(int)get_term_meta($t->term_id,'thumbnail_id',true);$img=$thumb?wp_get_attachment_image_url($thumb,'thumbnail'):'';
+  echo '<div class="tpm-cat-node" data-id="'.intval($t->term_id).'"><div class="tpm-cat-row"><span class="tpm-cat-handle" title="Flyt">⋮⋮</span><span class="tpm-cat-thumb">'.($img?'<img src="'.esc_url($img).'" alt="">':'◫').'</span><div class="tpm-cat-name"><strong>'.esc_html($t->name).'</strong><small>/'.esc_html($t->slug).' · '.intval($t->count).' produkter</small></div><div class="tpm-cat-actions"><button type="button" class="button tpm-cat-edit" data-id="'.intval($t->term_id).'">Redigér</button><button type="button" class="button tpm-cat-add-child" data-id="'.intval($t->term_id).'" data-name="'.esc_attr($t->name).'">+ Underkategori</button></div></div>';
+  tpm_category_branch($t->term_id,$level+1);echo '</div>';
+ }
+ echo '</div>';
+}
+function tpm_categories(){
+ if(!class_exists('WooCommerce'))return;
+ tpm_admin_head('Kategorier','Byg webshoppen visuelt med hovedkategorier og underkategorier.');
+ echo '<div class="tpm-cat-layout"><section class="tpm-card"><div class="tpm-cat-toolbar"><div><h2>Kategoristruktur</h2><p>Træk kategorier for at ændre rækkefølge. Brug underkategorier til mega-menuen.</p></div><button type="button" class="button button-primary tpm-cat-new">+ Ny hovedkategori</button></div><div id="tpm-category-tree">';
+ tpm_category_branch();echo '</div></section><aside class="tpm-card tpm-cat-editor"><h2 id="tpm-cat-editor-title">Ny kategori</h2><form id="tpm-cat-form"><input type="hidden" name="term_id" value="0"><label>Navn<input name="name" required placeholder="Fx Netværk"></label><label>Slug<input name="slug" placeholder="Oprettes automatisk"></label><label>Forældrekategori<select name="parent"><option value="0">— Hovedkategori —</option>';
+ $all=get_terms(['taxonomy'=>'product_cat','hide_empty'=>false,'orderby'=>'name']);if(!is_wp_error($all))foreach($all as$t)echo '<option value="'.intval($t->term_id).'">'.esc_html($t->name).'</option>';
+ echo '</select></label><label>Beskrivelse<textarea name="description" rows="5"></textarea></label><label class="tpm-checkline"><input type="checkbox" name="mega" value="1" checked> Vis i mega-menu</label><div class="tpm-cat-editor-actions"><button type="submit" class="button button-primary">Gem kategori</button><button type="button" class="button tpm-cat-reset">Nulstil</button></div><p class="tpm-cat-message"></p></form></aside></div></div>';
+}
+function tpm_cat_save(){
+ check_ajax_referer('tpm_categories','nonce');if(!current_user_can('manage_product_terms'))wp_send_json_error(['message'=>'Ingen adgang.'],403);
+ $id=absint($_POST['term_id']??0);$name=sanitize_text_field(wp_unslash($_POST['name']??''));if(!$name)wp_send_json_error(['message'=>'Navn mangler.']);
+ $args=['slug'=>sanitize_title(wp_unslash($_POST['slug']??'')),'parent'=>absint($_POST['parent']??0),'description'=>sanitize_textarea_field(wp_unslash($_POST['description']??''))];
+ if(!$args['slug'])unset($args['slug']);$r=$id?wp_update_term($id,'product_cat',$args+['name'=>$name]):wp_insert_term($name,'product_cat',$args);
+ if(is_wp_error($r))wp_send_json_error(['message'=>$r->get_error_message()]);
+ $tid=$id?:intval($r['term_id']);update_term_meta($tid,'_tpm_show_mega',!empty($_POST['mega'])?'yes':'no');wp_send_json_success(['message'=>'Kategorien er gemt.','id'=>$tid]);
+}
+add_action('wp_ajax_tpm_cat_save','tpm_cat_save');
+function tpm_cat_get(){
+ check_ajax_referer('tpm_categories','nonce');if(!current_user_can('manage_product_terms'))wp_send_json_error([],403);$id=absint($_POST['id']??0);$t=get_term($id,'product_cat');if(!$t||is_wp_error($t))wp_send_json_error(['message'=>'Kategorien blev ikke fundet.']);
+ wp_send_json_success(['id'=>$t->term_id,'name'=>$t->name,'slug'=>$t->slug,'parent'=>$t->parent,'description'=>$t->description,'mega'=>get_term_meta($t->term_id,'_tpm_show_mega',true)!=='no']);
+}
+add_action('wp_ajax_tpm_cat_get','tpm_cat_get');
+function tpm_cat_order(){
+ check_ajax_referer('tpm_categories','nonce');if(!current_user_can('manage_product_terms'))wp_send_json_error([],403);$ids=array_map('absint',(array)($_POST['ids']??[]));foreach($ids as$i=>$id)update_term_meta($id,'order',$i);wp_send_json_success();
+}
+add_action('wp_ajax_tpm_cat_order','tpm_cat_order');
+
 function tpm_products(){
  tpm_admin_head('Produkter','Et enklere produktkatalog oven på WooCommerce.');
  $products=wc_get_products(['limit'=>100,'orderby'=>'date','order'=>'DESC','status'=>['publish','draft','private']]);
