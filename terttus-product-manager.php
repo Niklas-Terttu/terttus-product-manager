@@ -2,12 +2,12 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.6.0
+Version: 1.6.1
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.6.0');
+define('TPM_VERSION','1.6.1');
 define('TPM_GITHUB_REPO','Niklas-Terttu/terttus-product-manager');
 define('TPM_PLUGIN_BASENAME',plugin_basename(__FILE__));
 
@@ -106,7 +106,7 @@ function tpm_category_branch($parent=0,$level=0){
  $uncategorized=(int)get_option('default_product_cat',0);
  $args=['taxonomy'=>'product_cat','hide_empty'=>false,'parent'=>$parent,'orderby'=>'menu_order','order'=>'ASC'];
  if($parent===0&&$uncategorized)$args['exclude']=[$uncategorized];
- $terms=get_terms($args);if(is_wp_error($terms))return;
+ $terms=get_terms($args);if(is_wp_error($terms))$terms=[];
  echo '<div class="tpm-cat-level" data-parent="'.intval($parent).'">';
  foreach($terms as$t){
   $thumb=(int)get_term_meta($t->term_id,'thumbnail_id',true);$img=$thumb?wp_get_attachment_image_url($thumb,'thumbnail'):'';
