@@ -2,12 +2,12 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.5.1
+Version: 1.5.2
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.5.1');
+define('TPM_VERSION','1.5.2');
 define('TPM_GITHUB_REPO','Niklas-Terttu/terttus-product-manager');
 define('TPM_PLUGIN_BASENAME',plugin_basename(__FILE__));
 
@@ -68,7 +68,7 @@ function tpm_force_update_check(){
  delete_site_transient('tpm_github_update_meta');delete_site_transient('update_plugins');wp_update_plugins();
  wp_safe_redirect(admin_url('plugins.php?tpm_checked=1'));exit;
 }
-add_action('admin_post_tpm_force_update','tpm_force_update_check');
+add_action('admin_post_tpm_force_update_check','tpm_force_update_check');
 function tpm_plugin_action_links($links){
  $url=wp_nonce_url(admin_url('admin-post.php?action=tpm_force_update_check'),'tpm_force_update');
  $links[]='<a href="'.esc_url($url).'">Søg efter opdatering</a>';return $links;
