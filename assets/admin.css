@@ -21,3 +21,6 @@
 #tpm-category-tree .ui-sortable-helper>.tpm-cat-row{box-shadow:0 14px 34px rgba(16,33,45,.22);border-color:#148b93}
 #tpm-category-tree .tpm-cat-placeholder{display:block!important;visibility:visible!important;height:62px!important;min-height:62px!important;border:2px dashed #148b93!important;background:#eefafa!important;border-radius:12px;margin:7px 0}
 #tpm-category-tree .tpm-cat-level{min-height:18px}
+
+/* Terttus Commerce 1.7.0 sale scheduling */
+.tpm-sale-schedule{margin-top:16px;padding:16px;border:1px solid #dfe6e9;border-radius:12px;background:#f8fafb;display:grid;grid-template-columns:minmax(180px,1fr) minmax(190px,.7fr) minmax(190px,.7fr);gap:14px;align-items:end}.tpm-sale-schedule>div p{margin:4px 0 0;color:#71808a;font-size:12px}.tpm-sale-status{grid-column:1/-1;width:max-content;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:800;background:#eef1f2;color:#68757c}.tpm-sale-status.is-active{background:#e7f5ef;color:#18734c}.tpm-sale-status.is-planned{background:#fff4e8;color:#a45b13}@media(max-width:900px){.tpm-sale-schedule{grid-template-columns:1fr}}
