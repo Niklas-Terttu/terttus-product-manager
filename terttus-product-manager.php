@@ -2,12 +2,12 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.6.2
+Version: 1.6.3
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.6.2');
+define('TPM_VERSION','1.6.3');
 define('TPM_GITHUB_REPO','Niklas-Terttu/terttus-product-manager');
 define('TPM_PLUGIN_BASENAME',plugin_basename(__FILE__));
 
@@ -113,7 +113,7 @@ function tpm_category_branch($parent=0,$level=0){
   $mega=get_term_meta($t->term_id,'_tpm_show_mega',true)!=='no';
   $children=get_terms(['taxonomy'=>'product_cat','hide_empty'=>false,'parent'=>$t->term_id,'fields'=>'ids']);
   $has_children=!is_wp_error($children)&&!empty($children);
-  echo '<div class="tpm-cat-node" draggable="true" data-id="'.intval($t->term_id).'" data-name="'.esc_attr($t->name).'">';
+  echo '<div class="tpm-cat-node" data-id="'.intval($t->term_id).'" data-name="'.esc_attr($t->name).'">';
   echo '<div class="tpm-cat-row"><button type="button" class="tpm-cat-collapse'.($has_children?'':' is-empty').'" aria-label="Fold kategori '.esc_attr($t->name).' '.($has_children?'sammen':'').'">'.($has_children?'▾':'·').'</button><span class="tpm-cat-handle" title="Træk for at flytte">⋮⋮</span><span class="tpm-cat-thumb">'.($img?'<img src="'.esc_url($img).'" alt="">':'◫').'</span>';
   echo '<div class="tpm-cat-name"><strong>'.esc_html($t->name).'</strong><small>/'.esc_html($t->slug).' · '.intval($t->count).' produkter</small></div>';
   echo '<span class="tpm-cat-mega '.($mega?'is-on':'is-off').'">'.($mega?'Mega-menu ✓':'Skjult i menu').'</span>';
