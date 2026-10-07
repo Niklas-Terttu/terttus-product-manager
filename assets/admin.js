@@ -89,10 +89,43 @@ jQuery(function($){
 });
 
 jQuery(function($){
- function catFormReset(){let f=$('#tpm-cat-form')[0];if(!f)return;f.reset();$('[name=term_id]',f).val(0);$('[name=parent]',f).val(0);$('[name=mega]',f).prop('checked',true);$('#tpm-cat-editor-title').text('Ny kategori');$('.tpm-cat-message').text('');}
- $(document).on('click','.tpm-cat-new,.tpm-cat-reset',catFormReset);
- $(document).on('click','.tpm-cat-add-child',function(){catFormReset();$('[name=parent]','#tpm-cat-form').val($(this).data('id'));$('#tpm-cat-editor-title').text('Ny underkategori under '+$(this).data('name'));});
- $(document).on('click','.tpm-cat-edit',function(){let id=$(this).data('id');$.post(TPM.ajax,{action:'tpm_cat_get',nonce:TPM.catNonce,id:id},function(r){if(!r.success)return;let d=r.data,f=$('#tpm-cat-form');f.find('[name=term_id]').val(d.id);f.find('[name=name]').val(d.name);f.find('[name=slug]').val(d.slug);f.find('[name=parent]').val(d.parent);f.find('[name=description]').val(d.description);f.find('[name=mega]').prop('checked',!!d.mega);$('#tpm-cat-editor-title').text('Redigér '+d.name);});});
- $(document).on('submit','#tpm-cat-form',function(e){e.preventDefault();let $f=$(this),data=$f.serializeArray();data.push({name:'action',value:'tpm_cat_save'},{name:'nonce',value:TPM.catNonce});$f.find('button[type=submit]').prop('disabled',true);$.post(TPM.ajax,$.param(data),function(r){if(r.success){$('.tpm-cat-message').text(r.data.message+' Genindlæser…');location.reload();}else $('.tpm-cat-message').text(r.data&&r.data.message?r.data.message:'Kunne ikke gemme.');}).always(function(){$f.find('button[type=submit]').prop('disabled',false);});});
- if($.fn.sortable){$('.tpm-cat-level').sortable({items:'>.tpm-cat-node',handle:'.tpm-cat-handle',update:function(){let ids=$(this).children('.tpm-cat-node').map(function(){return $(this).data('id');}).get();$.post(TPM.ajax,{action:'tpm_cat_order',nonce:TPM.catNonce,ids:ids});}});}
+ if(!$('#tpm-category-tree').length)return;
+ const $form=$('#tpm-cat-form');
+ function resetForm(){
+  if(!$form.length)return;$form[0].reset();$form.find('[name=term_id]').val(0);$form.find('[name=parent]').val(0);$form.find('[name=mega]').prop('checked',true);$form.find('[name=thumbnail_id]').val(0);
+  $('#tpm-cat-image-preview').html('<span>Intet billede</span>');$('#tpm-cat-editor-title').text('Ny kategori');$('.tpm-cat-danger').prop('hidden',true);$('.tpm-cat-message').text('');
+ }
+ function serializeTree(){
+  let out=[];$('#tpm-category-tree .tpm-cat-level').each(function(){let parent=parseInt($(this).attr('data-parent'),10)||0;$(this).children('.tpm-cat-node').each(function(i){out.push({id:parseInt($(this).data('id'),10),parent:parent,order:i});});});return out;
+ }
+ let saveTimer;
+ function saveStructure(){
+  clearTimeout(saveTimer);$('.tpm-cat-save-state').text('Gemmer…');
+  saveTimer=setTimeout(function(){$.post(TPM.ajax,{action:'tpm_cat_structure',nonce:TPM.catNonce,structure:JSON.stringify(serializeTree())},function(r){$('.tpm-cat-save-state').text(r.success?'Gemt ✓':'Kunne ikke gemme');if(!r.success&&r.data&&r.data.message)alert(r.data.message);});},180);
+ }
+ function initSortable(){
+  if(!$.fn.sortable)return;
+  $('.tpm-cat-level').sortable('destroy').sortable({
+   connectWith:'.tpm-cat-level',items:'>.tpm-cat-node',handle:'.tpm-cat-handle',placeholder:'tpm-cat-placeholder',tolerance:'pointer',
+   start:function(e,ui){ui.item.addClass('is-dragging');},
+   stop:function(e,ui){ui.item.removeClass('is-dragging');$('.tpm-cat-level').each(function(){let $l=$(this),$owner=$l.closest('.tpm-cat-node');$l.attr('data-parent',$owner.length?$owner.data('id'):0);});saveStructure();}
+  });
+ }
+ $(document).on('click','.tpm-cat-new,.tpm-cat-reset',resetForm);
+ $(document).on('click','.tpm-cat-add-child',function(){resetForm();$form.find('[name=parent]').val($(this).data('id'));$('#tpm-cat-editor-title').text('Ny underkategori under '+$(this).data('name'));});
+ $(document).on('click','.tpm-cat-edit',function(){
+  $.post(TPM.ajax,{action:'tpm_cat_get',nonce:TPM.catNonce,id:$(this).data('id')},function(r){if(!r.success)return;let d=r.data;$form.find('[name=term_id]').val(d.id);$form.find('[name=name]').val(d.name);$form.find('[name=slug]').val(d.slug);$form.find('[name=parent]').val(d.parent);$form.find('[name=description]').val(d.description);$form.find('[name=mega]').prop('checked',!!d.mega);$form.find('[name=thumbnail_id]').val(d.thumbnail_id||0);$('#tpm-cat-image-preview').html(d.thumbnail_url?'<img src="'+d.thumbnail_url+'" alt="">':'<span>Intet billede</span>');$('#tpm-cat-editor-title').text('Redigér '+d.name);$('.tpm-cat-danger').prop('hidden',false);$('.tpm-cat-message').text('');});
+ });
+ $(document).on('submit','#tpm-cat-form',function(e){
+  e.preventDefault();let data=$form.serializeArray();data.push({name:'action',value:'tpm_cat_save'},{name:'nonce',value:TPM.catNonce});$form.find('button[type=submit]').prop('disabled',true);
+  $.post(TPM.ajax,$.param(data),function(r){if(r.success){$('.tpm-cat-message').text(r.data.message+' Genindlæser…');location.reload();}else $('.tpm-cat-message').text(r.data&&r.data.message?r.data.message:'Kunne ikke gemme.');}).always(function(){$form.find('button[type=submit]').prop('disabled',false);});
+ });
+ $(document).on('click','.tpm-cat-pick-image',function(){let frame=wp.media({title:'Vælg kategoribillede',multiple:false,library:{type:'image'}});frame.on('select',function(){let a=frame.state().get('selection').first().toJSON(),u=a.sizes&&a.sizes.thumbnail?a.sizes.thumbnail.url:a.url;$form.find('[name=thumbnail_id]').val(a.id);$('#tpm-cat-image-preview').html('<img src="'+u+'" alt="">');});frame.open();});
+ $(document).on('click','.tpm-cat-remove-image',function(){$form.find('[name=thumbnail_id]').val(0);$('#tpm-cat-image-preview').html('<span>Intet billede</span>');});
+ $(document).on('click','.tpm-cat-delete',function(){let id=parseInt($form.find('[name=term_id]').val(),10)||0,name=$form.find('[name=name]').val();if(!id||!confirm('Slet kategorien “'+name+'”? Produkterne bliver ikke slettet.'))return;$.post(TPM.ajax,{action:'tpm_cat_delete',nonce:TPM.catNonce,id:id},function(r){if(r.success)location.reload();else alert(r.data&&r.data.message?r.data.message:'Kunne ikke slette kategorien.');});});
+ $(document).on('click','.tpm-cat-collapse',function(){let $n=$(this).closest('.tpm-cat-node'),$l=$n.children('.tpm-cat-level');if(!$l.children().length)return;$l.toggleClass('is-collapsed');$(this).text($l.hasClass('is-collapsed')?'▸':'▾');});
+ $('.tpm-cat-collapse-all').on('click',function(){$('#tpm-category-tree .tpm-cat-node>.tpm-cat-level').addClass('is-collapsed');$('#tpm-category-tree .tpm-cat-collapse:not(.is-empty)').text('▸');});
+ $('.tpm-cat-expand-all').on('click',function(){$('#tpm-category-tree .tpm-cat-level').removeClass('is-collapsed');$('#tpm-category-tree .tpm-cat-collapse:not(.is-empty)').text('▾');});
+ $('#tpm-cat-search').on('input',function(){let q=$(this).val().trim().toLowerCase();$('#tpm-category-tree .tpm-cat-node').each(function(){let $n=$(this),hit=!q||String($n.data('name')).toLowerCase().includes(q)||$n.find('>.tpm-cat-level>.tpm-cat-node').filter(function(){return String($(this).data('name')).toLowerCase().includes(q);}).length;$n.toggleClass('is-search-hidden',!hit);});if(q)$('.tpm-cat-level').removeClass('is-collapsed');});
+ initSortable();
 });
