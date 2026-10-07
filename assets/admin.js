@@ -106,9 +106,9 @@ jQuery(function($){
  function initSortable(){
   if(!$.fn.sortable)return;
   $('.tpm-cat-level').sortable('destroy').sortable({
-   connectWith:'.tpm-cat-level',items:'>.tpm-cat-node',handle:'.tpm-cat-handle',placeholder:'tpm-cat-placeholder',tolerance:'pointer',
+   connectWith:'.tpm-cat-level',items:'>.tpm-cat-node',handle:'.tpm-cat-handle',placeholder:'tpm-cat-placeholder',tolerance:'pointer',forcePlaceholderSize:true,dropOnEmpty:true,
    start:function(e,ui){ui.item.addClass('is-dragging');},
-   stop:function(e,ui){ui.item.removeClass('is-dragging');$('.tpm-cat-level').each(function(){let $l=$(this),$owner=$l.closest('.tpm-cat-node');$l.attr('data-parent',$owner.length?$owner.data('id'):0);});saveStructure();}
+   stop:function(e,ui){ui.item.removeClass('is-dragging');$('.tpm-cat-level').each(function(){let $l=$(this),$owner=$l.parent('.tpm-cat-node');$l.attr('data-parent',$owner.length?$owner.data('id'):0);});saveStructure();}
   });
  }
  $(document).on('click','.tpm-cat-new,.tpm-cat-reset',resetForm);
