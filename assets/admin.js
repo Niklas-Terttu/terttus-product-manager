@@ -105,29 +105,22 @@ jQuery(function($){
  }
  function refreshParents(){$('#tpm-category-tree .tpm-cat-level').each(function(){let $l=$(this),$owner=$l.parent('.tpm-cat-node');$l.attr('data-parent',$owner.length?$owner.data('id'):0);});}
  function initSortable(){
-  let dragged=null;
-  $('#tpm-category-tree .tpm-cat-node').attr('draggable','true');
-  $('#tpm-category-tree').off('.tpmDrag')
-   .on('dragstart.tpmDrag','.tpm-cat-node',function(e){
-    if(!$(e.target).closest('.tpm-cat-handle').length){e.preventDefault();return;}
-    dragged=this;$(this).addClass('is-dragging');e.originalEvent.dataTransfer.effectAllowed='move';e.originalEvent.dataTransfer.setData('text/plain',String($(this).data('id')));
-   })
-   .on('dragend.tpmDrag','.tpm-cat-node',function(){$(this).removeClass('is-dragging');$('.tpm-drop-before,.tpm-drop-after,.tpm-drop-inside').removeClass('tpm-drop-before tpm-drop-after tpm-drop-inside');dragged=null;})
-   .on('dragover.tpmDrag','.tpm-cat-row',function(e){
-    if(!dragged||$(dragged).is($(this).closest('.tpm-cat-node'))||$.contains(dragged,this))return;
-    e.preventDefault();let ev=e.originalEvent,rect=this.getBoundingClientRect(),y=ev.clientY-rect.top,$row=$(this);
-    $('.tpm-drop-before,.tpm-drop-after,.tpm-drop-inside').removeClass('tpm-drop-before tpm-drop-after tpm-drop-inside');
-    if(y<rect.height*.25)$row.addClass('tpm-drop-before');else if(y>rect.height*.75)$row.addClass('tpm-drop-after');else $row.addClass('tpm-drop-inside');
-    ev.dataTransfer.dropEffect='move';
-   })
-   .on('drop.tpmDrag','.tpm-cat-row',function(e){
-    if(!dragged)return;e.preventDefault();e.stopPropagation();let $targetNode=$(this).closest('.tpm-cat-node'),$row=$(this),$drag=$(dragged);
-    if($drag.is($targetNode)||$.contains(dragged,$targetNode[0]))return;
-    if($row.hasClass('tpm-drop-before'))$drag.insertBefore($targetNode);
-    else if($row.hasClass('tpm-drop-after'))$drag.insertAfter($targetNode);
-    else {let $children=$targetNode.children('.tpm-cat-level');if(!$children.length)$children=$('<div class="tpm-cat-level"></div>').appendTo($targetNode);$children.removeClass('is-collapsed').append($drag);$targetNode.children('.tpm-cat-row').find('.tpm-cat-collapse').removeClass('is-empty').text('▾');}
-    $('.tpm-drop-before,.tpm-drop-after,.tpm-drop-inside').removeClass('tpm-drop-before tpm-drop-after tpm-drop-inside');refreshParents();saveStructure();dragged=null;
-   });
+  if(!$.fn.sortable){$('.tpm-cat-save-state').text('Drag & drop kunne ikke indlæses');return;}
+  $('.tpm-cat-level').sortable({
+   connectWith:'.tpm-cat-level',
+   items:'>.tpm-cat-node',
+   handle:'.tpm-cat-handle',
+   tolerance:'pointer',
+   placeholder:'tpm-cat-placeholder',
+   forcePlaceholderSize:true,
+   helper:'clone',
+   opacity:.8,
+   cursor:'grabbing',
+   dropOnEmpty:true,
+   start:function(e,ui){ui.item.addClass('is-dragging');},
+   receive:function(e,ui){refreshParents();},
+   stop:function(e,ui){ui.item.removeClass('is-dragging');refreshParents();saveStructure();}
+  }).disableSelection();
  }
  $(document).on('click','.tpm-cat-new,.tpm-cat-reset',resetForm);
  $(document).on('click','.tpm-cat-add-child',function(){resetForm();$form.find('[name=parent]').val($(this).data('id'));$('#tpm-cat-editor-title').text('Ny underkategori under '+$(this).data('name'));});
