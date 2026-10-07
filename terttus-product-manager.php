@@ -2,12 +2,12 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.7.8
+Version: 1.7.9
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.7.8');
+define('TPM_VERSION','1.7.9');
 define('TPM_GITHUB_REPO','Niklas-Terttu/terttus-product-manager');
 define('TPM_PLUGIN_BASENAME',plugin_basename(__FILE__));
 
@@ -202,7 +202,7 @@ function tpm_screen(){
  $id=absint($_GET['product_id']??0);$p=$id?wc_get_product($id):null;if($id&&!$p)wp_die('Produktet blev ikke fundet.');
  if(isset($_GET['saved']))echo'<div class="notice notice-success is-dismissible"><p>Produktet er gemt.</p></div>';
  $cats=get_terms(['taxonomy'=>'product_cat','hide_empty'=>false]);$selected=$p?$p->get_category_ids():[];$gallery=$p?$p->get_gallery_image_ids():[];
- ?><div class="wrap tpm"><div class="tpm-head"><div><h1><?php echo $p?'Redigér produkt':'Nyt produkt';?></h1><p>En enkel arbejdsgang, gemt direkte i WooCommerce.</p></div><div class="tpm-head-actions"><a class="button" href="<?php echo esc_url(admin_url('edit.php?post_type=product'));?>">Alle produkter</a><?php if($p):?><a class="button" href="<?php echo esc_url(get_permalink($p->get_id()));?>" target="_blank">Se produkt</a><?php endif;?><span class="tpm-badge">Terttus</span></div></div>
+ ?><div class="wrap tpm"><div class="tpm-head"><div><h1><?php echo $p?'Redigér produkt':'Nyt produkt';?></h1><p>En enkel arbejdsgang, gemt direkte i WooCommerce.</p></div><div class="tpm-head-actions"><a class="button" href="<?php echo esc_url(admin_url('admin.php?page=terttus-products'));?>">Alle produkter</a><?php if($p):?><a class="button" href="<?php echo esc_url(get_permalink($p->get_id()));?>" target="_blank">Se produkt</a><?php endif;?><span class="tpm-badge">Terttus</span></div></div>
  <section class="tpm-card tpm-dcs-importer"><div class="tpm-import-head"><div><span class="tpm-eyebrow">DCS import</span><h2>Importér direkte fra DCS</h2><p>Indsæt en offentlig DCS-produktadresse. Vi henter de produktdata, billeder og specifikationer som DCS gør offentligt tilgængelige. Kostpris indtastes manuelt bagefter.</p></div><button type="button" class="button button-primary tpm-fetch-dcs">Hent produkt</button></div><div class="tpm-url-row"><input type="url" id="tpm-dcs-url" placeholder="https://www.dcs.dk/da/p/..."><span class="spinner"></span></div><div id="tpm-dcs-result" class="tpm-import-preview" hidden></div></section><section class="tpm-card tpm-importer"><div class="tpm-import-head"><div><span class="tpm-eyebrow">Hurtig import</span><h2>Indsæt produktdata</h2><p>Indsæt kopieret tekst fra DCS eller en anden leverandør. Vi forsøger at finde navn, varenummer, EAN, mærke, priser og billedlinks.</p></div><button type="button" class="button button-primary tpm-parse-import">Analysér data</button></div><textarea id="tpm-import-text" rows="8" placeholder="Indsæt produktdata her..."></textarea><div id="tpm-import-preview" class="tpm-import-preview" hidden></div></section><form method="post" action="<?php echo esc_url(admin_url('admin-post.php'));?>"><?php wp_nonce_field('tpm_save');?><input type="hidden" name="action" value="tpm_save_product"><input type="hidden" name="product_id" value="<?php echo $id;?>">
  <div class="tpm-layout"><main>
  <section class="tpm-card"><h2>1. Grundinfo</h2><div class="tpm-grid"><label class="wide">Produktnavn<input required name="name" value="<?php echo esc_attr(tpm_val($p,'name'));?>"></label><label>SKU / varenummer<input name="sku" value="<?php echo esc_attr(tpm_val($p,'sku'));?>"></label><label>EAN / GTIN<input name="ean" value="<?php echo esc_attr(tpm_val($p,'ean'));?>"></label><label>Mærke<input name="brand" value="<?php echo esc_attr(tpm_val($p,'brand'));?>"></label><div class="wide tpm-category-field"><div class="tpm-category-heading"><strong>Kategorier</strong><span>Vælg én eller flere</span></div><div class="tpm-category-picker"><?php $uncategorized=(int)get_option('default_product_cat',0);foreach($cats as$c){if($uncategorized&&$c->term_id===$uncategorized)continue;$ancestors=array_reverse(get_ancestors($c->term_id,'product_cat'));$depth=count($ancestors);echo '<label class="tpm-category-option depth-'.intval(min($depth,4)).'"><input type="checkbox" name="categories[]" value="'.intval($c->term_id).'" '.checked(in_array($c->term_id,$selected),true,false).'><span class="tpm-category-box"></span><span class="tpm-category-name">'.($depth?'<span class="tpm-category-branch">↳</span>':'').esc_html($c->name).'</span></label>';}?></div><small class="description">Tilbud-kategorien styres automatisk ud fra tilbudsprisen.</small></div></div></section>
