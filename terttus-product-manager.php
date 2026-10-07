@@ -2,12 +2,12 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.5.4
+Version: 1.6.0
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.5.4');
+define('TPM_VERSION','1.6.0');
 define('TPM_GITHUB_REPO','Niklas-Terttu/terttus-product-manager');
 define('TPM_PLUGIN_BASENAME',plugin_basename(__FILE__));
 
@@ -84,7 +84,7 @@ function tpm_menu(){
  add_submenu_page('terttus-commerce','Lager','Lager','manage_woocommerce','terttus-stock','tpm_stock');
  add_submenu_page('terttus-commerce','Leverandører','Leverandører','manage_woocommerce','terttus-suppliers','tpm_suppliers');
 }add_action('admin_menu','tpm_menu',30);
-function tpm_assets($h){if(strpos($h,'terttus')===false)return;wp_enqueue_media();wp_enqueue_style('tpm',plugins_url('assets/admin.css',__FILE__),[],TPM_VERSION);wp_enqueue_script('tpm',plugins_url('assets/admin.js',__FILE__),['jquery'],TPM_VERSION,true);wp_localize_script('tpm','TPM',['ajax'=>admin_url('admin-ajax.php'),'nonce'=>wp_create_nonce('tpm_dcs_import'),'catNonce'=>wp_create_nonce('tpm_categories')]);}add_action('admin_enqueue_scripts','tpm_assets');
+function tpm_assets($h){if(strpos($h,'terttus')===false)return;wp_enqueue_media();wp_enqueue_style('tpm',plugins_url('assets/admin.css',__FILE__),[],TPM_VERSION);wp_enqueue_script('jquery-ui-sortable');wp_enqueue_script('tpm',plugins_url('assets/admin.js',__FILE__),['jquery','jquery-ui-sortable'],TPM_VERSION,true);wp_localize_script('tpm','TPM',['ajax'=>admin_url('admin-ajax.php'),'nonce'=>wp_create_nonce('tpm_dcs_import'),'catNonce'=>wp_create_nonce('tpm_categories')]);}add_action('admin_enqueue_scripts','tpm_assets');
 function tpm_val($p,$k,$d=''){if(!$p)return $d;if(in_array($k,['ean','brand','cost','supplier','supplier_sku','supplier_url'],true))return get_post_meta($p->get_id(),'_tpm_'.$k,true);$m=['name'=>'get_name','sku'=>'get_sku','price'=>'get_regular_price','sale'=>'get_sale_price','stock'=>'get_stock_quantity','stock_status'=>'get_stock_status','short_description'=>'get_short_description','description'=>'get_description','image'=>'get_image_id'];return isset($m[$k])?$p->{$m[$k]}():$d;}
 
 function tpm_money($v){return wc_price((float)$v,['decimals'=>2]);}
@@ -103,12 +103,21 @@ function tpm_dashboard(){
 }
 
 function tpm_category_branch($parent=0,$level=0){
- $terms=get_terms(['taxonomy'=>'product_cat','hide_empty'=>false,'parent'=>$parent,'orderby'=>'menu_order','order'=>'ASC']);
- if(is_wp_error($terms)||!$terms)return;
+ $uncategorized=(int)get_option('default_product_cat',0);
+ $args=['taxonomy'=>'product_cat','hide_empty'=>false,'parent'=>$parent,'orderby'=>'menu_order','order'=>'ASC'];
+ if($parent===0&&$uncategorized)$args['exclude']=[$uncategorized];
+ $terms=get_terms($args);if(is_wp_error($terms))return;
  echo '<div class="tpm-cat-level" data-parent="'.intval($parent).'">';
  foreach($terms as$t){
   $thumb=(int)get_term_meta($t->term_id,'thumbnail_id',true);$img=$thumb?wp_get_attachment_image_url($thumb,'thumbnail'):'';
-  echo '<div class="tpm-cat-node" data-id="'.intval($t->term_id).'"><div class="tpm-cat-row"><span class="tpm-cat-handle" title="Flyt">⋮⋮</span><span class="tpm-cat-thumb">'.($img?'<img src="'.esc_url($img).'" alt="">':'◫').'</span><div class="tpm-cat-name"><strong>'.esc_html($t->name).'</strong><small>/'.esc_html($t->slug).' · '.intval($t->count).' produkter</small></div><div class="tpm-cat-actions"><button type="button" class="button tpm-cat-edit" data-id="'.intval($t->term_id).'">Redigér</button><button type="button" class="button tpm-cat-add-child" data-id="'.intval($t->term_id).'" data-name="'.esc_attr($t->name).'">+ Underkategori</button></div></div>';
+  $mega=get_term_meta($t->term_id,'_tpm_show_mega',true)!=='no';
+  $children=get_terms(['taxonomy'=>'product_cat','hide_empty'=>false,'parent'=>$t->term_id,'fields'=>'ids']);
+  $has_children=!is_wp_error($children)&&!empty($children);
+  echo '<div class="tpm-cat-node" data-id="'.intval($t->term_id).'" data-name="'.esc_attr($t->name).'">';
+  echo '<div class="tpm-cat-row"><button type="button" class="tpm-cat-collapse'.($has_children?'':' is-empty').'" aria-label="Fold kategori '.esc_attr($t->name).' '.($has_children?'sammen':'').'">'.($has_children?'▾':'·').'</button><span class="tpm-cat-handle" title="Træk for at flytte">⋮⋮</span><span class="tpm-cat-thumb">'.($img?'<img src="'.esc_url($img).'" alt="">':'◫').'</span>';
+  echo '<div class="tpm-cat-name"><strong>'.esc_html($t->name).'</strong><small>/'.esc_html($t->slug).' · '.intval($t->count).' produkter</small></div>';
+  echo '<span class="tpm-cat-mega '.($mega?'is-on':'is-off').'">'.($mega?'Mega-menu ✓':'Skjult i menu').'</span>';
+  echo '<div class="tpm-cat-actions"><button type="button" class="button tpm-cat-edit" data-id="'.intval($t->term_id).'">Redigér</button><button type="button" class="button tpm-cat-add-child" data-id="'.intval($t->term_id).'" data-name="'.esc_attr($t->name).'">+ Underkategori</button></div></div>';
   tpm_category_branch($t->term_id,$level+1);echo '</div>';
  }
  echo '</div>';
@@ -116,29 +125,49 @@ function tpm_category_branch($parent=0,$level=0){
 function tpm_categories(){
  if(!class_exists('WooCommerce'))return;
  tpm_admin_head('Kategorier','Byg webshoppen visuelt med hovedkategorier og underkategorier.');
- echo '<div class="tpm-cat-layout"><section class="tpm-card"><div class="tpm-cat-toolbar"><div><h2>Kategoristruktur</h2><p>Træk kategorier for at ændre rækkefølge. Brug underkategorier til mega-menuen.</p></div><button type="button" class="button button-primary tpm-cat-new">+ Ny hovedkategori</button></div><div id="tpm-category-tree">';
- tpm_category_branch();echo '</div></section><aside class="tpm-card tpm-cat-editor"><h2 id="tpm-cat-editor-title">Ny kategori</h2><form id="tpm-cat-form"><input type="hidden" name="term_id" value="0"><label>Navn<input name="name" required placeholder="Fx Netværk"></label><label>Slug<input name="slug" placeholder="Oprettes automatisk"></label><label>Forældrekategori<select name="parent"><option value="0">— Hovedkategori —</option>';
- $all=get_terms(['taxonomy'=>'product_cat','hide_empty'=>false,'orderby'=>'name']);if(!is_wp_error($all))foreach($all as$t)echo '<option value="'.intval($t->term_id).'">'.esc_html($t->name).'</option>';
- echo '</select></label><label>Beskrivelse<textarea name="description" rows="5"></textarea></label><label class="tpm-checkline"><input type="checkbox" name="mega" value="1" checked> Vis i mega-menu</label><div class="tpm-cat-editor-actions"><button type="submit" class="button button-primary">Gem kategori</button><button type="button" class="button tpm-cat-reset">Nulstil</button></div><p class="tpm-cat-message"></p></form></aside></div></div>';
+ echo '<div class="tpm-cat-tools"><div class="tpm-cat-search"><span>⌕</span><input type="search" id="tpm-cat-search" placeholder="Søg i kategorier…"></div><button type="button" class="button tpm-cat-expand-all">Fold alle ud</button><button type="button" class="button tpm-cat-collapse-all">Fold alle sammen</button><span class="tpm-cat-save-state" aria-live="polite"></span></div>';
+ echo '<div class="tpm-cat-layout"><section class="tpm-card"><div class="tpm-cat-toolbar"><div><h2>Kategoristruktur</h2><p>Træk en kategori op, ned eller ind under en anden kategori. Ændringer gemmes automatisk.</p></div><button type="button" class="button button-primary tpm-cat-new">+ Ny hovedkategori</button></div><div id="tpm-category-tree">';
+ tpm_category_branch();echo '</div>';
+ echo '<div class="tpm-mega-preview"><div class="tpm-mega-preview-head"><div><span class="tpm-eyebrow">Preview</span><h2>Mega-menu</h2></div><small>Kun kategorier markeret til mega-menu</small></div><div class="tpm-mega-preview-grid">';
+ $uncategorized=(int)get_option('default_product_cat',0);$tops=get_terms(['taxonomy'=>'product_cat','hide_empty'=>false,'parent'=>0,'exclude'=>$uncategorized?[$uncategorized]:[],'orderby'=>'menu_order','order'=>'ASC']);
+ if(!is_wp_error($tops))foreach($tops as$top){if(get_term_meta($top->term_id,'_tpm_show_mega',true)==='no')continue;echo '<div class="tpm-mega-preview-col"><strong>'.esc_html($top->name).'</strong>';$kids=get_terms(['taxonomy'=>'product_cat','hide_empty'=>false,'parent'=>$top->term_id,'orderby'=>'menu_order','order'=>'ASC']);if(!is_wp_error($kids))foreach($kids as$kid){if(get_term_meta($kid->term_id,'_tpm_show_mega',true)!=='no')echo '<span>'.esc_html($kid->name).'</span>';}echo '</div>';}
+ echo '</div></div></section>';
+ echo '<aside class="tpm-card tpm-cat-editor"><h2 id="tpm-cat-editor-title">Ny kategori</h2><form id="tpm-cat-form"><input type="hidden" name="term_id" value="0"><input type="hidden" name="thumbnail_id" value="0" id="tpm-cat-thumb-id">';
+ echo '<label>Navn<input name="name" required placeholder="Fx Netværk"></label><label>Slug<input name="slug" placeholder="Oprettes automatisk"></label><label>Forældrekategori<select name="parent"><option value="0">— Hovedkategori —</option>';
+ $all=get_terms(['taxonomy'=>'product_cat','hide_empty'=>false,'orderby'=>'name']);if(!is_wp_error($all))foreach($all as$t){if($uncategorized&&$t->term_id===$uncategorized)continue;echo '<option value="'.intval($t->term_id).'">'.esc_html($t->name).'</option>';}
+ echo '</select></label><label>Kategoribillede</label><div class="tpm-cat-image"><div id="tpm-cat-image-preview"><span>Intet billede</span></div><div><button type="button" class="button tpm-cat-pick-image">Vælg billede</button><button type="button" class="button-link-delete tpm-cat-remove-image">Fjern</button></div></div>';
+ echo '<label>Beskrivelse<textarea name="description" rows="4"></textarea></label><label class="tpm-checkline"><input type="checkbox" name="mega" value="1" checked> Vis i mega-menu</label><div class="tpm-cat-editor-actions"><button type="submit" class="button button-primary">Gem kategori</button><button type="button" class="button tpm-cat-reset">Nulstil</button></div><div class="tpm-cat-danger" hidden><hr><button type="button" class="button-link-delete tpm-cat-delete">Slet kategori</button><small>Produkter slettes ikke. De mister blot denne kategori.</small></div><p class="tpm-cat-message"></p></form></aside></div></div>';
 }
 function tpm_cat_save(){
  check_ajax_referer('tpm_categories','nonce');if(!current_user_can('manage_product_terms'))wp_send_json_error(['message'=>'Ingen adgang.'],403);
  $id=absint($_POST['term_id']??0);$name=sanitize_text_field(wp_unslash($_POST['name']??''));if(!$name)wp_send_json_error(['message'=>'Navn mangler.']);
- $args=['slug'=>sanitize_title(wp_unslash($_POST['slug']??'')),'parent'=>absint($_POST['parent']??0),'description'=>sanitize_textarea_field(wp_unslash($_POST['description']??''))];
- if(!$args['slug'])unset($args['slug']);$r=$id?wp_update_term($id,'product_cat',$args+['name'=>$name]):wp_insert_term($name,'product_cat',$args);
- if(is_wp_error($r))wp_send_json_error(['message'=>$r->get_error_message()]);
- $tid=$id?:intval($r['term_id']);update_term_meta($tid,'_tpm_show_mega',!empty($_POST['mega'])?'yes':'no');wp_send_json_success(['message'=>'Kategorien er gemt.','id'=>$tid]);
+ $parent=absint($_POST['parent']??0);if($id&&$parent===$id)wp_send_json_error(['message'=>'En kategori kan ikke være sin egen forælder.']);
+ $args=['slug'=>sanitize_title(wp_unslash($_POST['slug']??'')),'parent'=>$parent,'description'=>sanitize_textarea_field(wp_unslash($_POST['description']??''))];if(!$args['slug'])unset($args['slug']);
+ $r=$id?wp_update_term($id,'product_cat',$args+['name'=>$name]):wp_insert_term($name,'product_cat',$args);if(is_wp_error($r))wp_send_json_error(['message'=>$r->get_error_message()]);
+ $tid=$id?:intval($r['term_id']);update_term_meta($tid,'_tpm_show_mega',!empty($_POST['mega'])?'yes':'no');update_term_meta($tid,'thumbnail_id',absint($_POST['thumbnail_id']??0));
+ wp_send_json_success(['message'=>'Kategorien er gemt.','id'=>$tid]);
 }
 add_action('wp_ajax_tpm_cat_save','tpm_cat_save');
 function tpm_cat_get(){
  check_ajax_referer('tpm_categories','nonce');if(!current_user_can('manage_product_terms'))wp_send_json_error([],403);$id=absint($_POST['id']??0);$t=get_term($id,'product_cat');if(!$t||is_wp_error($t))wp_send_json_error(['message'=>'Kategorien blev ikke fundet.']);
- wp_send_json_success(['id'=>$t->term_id,'name'=>$t->name,'slug'=>$t->slug,'parent'=>$t->parent,'description'=>$t->description,'mega'=>get_term_meta($t->term_id,'_tpm_show_mega',true)!=='no']);
+ $thumb=(int)get_term_meta($id,'thumbnail_id',true);wp_send_json_success(['id'=>$t->term_id,'name'=>$t->name,'slug'=>$t->slug,'parent'=>$t->parent,'description'=>$t->description,'mega'=>get_term_meta($t->term_id,'_tpm_show_mega',true)!=='no','thumbnail_id'=>$thumb,'thumbnail_url'=>$thumb?wp_get_attachment_image_url($thumb,'thumbnail'):'']);
 }
 add_action('wp_ajax_tpm_cat_get','tpm_cat_get');
-function tpm_cat_order(){
- check_ajax_referer('tpm_categories','nonce');if(!current_user_can('manage_product_terms'))wp_send_json_error([],403);$ids=array_map('absint',(array)($_POST['ids']??[]));foreach($ids as$i=>$id)update_term_meta($id,'order',$i);wp_send_json_success();
+function tpm_cat_structure(){
+ check_ajax_referer('tpm_categories','nonce');if(!current_user_can('manage_product_terms'))wp_send_json_error([],403);
+ $raw=isset($_POST['structure'])?json_decode(wp_unslash($_POST['structure']),true):[];if(!is_array($raw))wp_send_json_error(['message'=>'Ugyldig struktur.']);
+ foreach($raw as$item){$id=absint($item['id']??0);$parent=absint($item['parent']??0);$order=absint($item['order']??0);if(!$id||$id===$parent)continue;$r=wp_update_term($id,'product_cat',['parent'=>$parent]);if(is_wp_error($r))wp_send_json_error(['message'=>$r->get_error_message()]);update_term_meta($id,'order',$order);}
+ wp_send_json_success(['message'=>'Strukturen er gemt.']);
 }
-add_action('wp_ajax_tpm_cat_order','tpm_cat_order');
+add_action('wp_ajax_tpm_cat_structure','tpm_cat_structure');
+function tpm_cat_delete(){
+ check_ajax_referer('tpm_categories','nonce');if(!current_user_can('delete_product_terms'))wp_send_json_error(['message'=>'Ingen adgang.'],403);
+ $id=absint($_POST['id']??0);$uncategorized=(int)get_option('default_product_cat',0);if(!$id||$id===$uncategorized)wp_send_json_error(['message'=>'Denne kategori kan ikke slettes.']);
+ $t=get_term($id,'product_cat');if(!$t||is_wp_error($t))wp_send_json_error(['message'=>'Kategorien blev ikke fundet.']);
+ $children=get_terms(['taxonomy'=>'product_cat','hide_empty'=>false,'parent'=>$id,'fields'=>'ids']);if(!is_wp_error($children))foreach($children as$child)wp_update_term($child,'product_cat',['parent'=>$t->parent]);
+ $r=wp_delete_term($id,'product_cat');if(is_wp_error($r))wp_send_json_error(['message'=>$r->get_error_message()]);wp_send_json_success(['message'=>'Kategorien er slettet.']);
+}
+add_action('wp_ajax_tpm_cat_delete','tpm_cat_delete');
 
 function tpm_products(){
  tpm_admin_head('Produkter','Et enklere produktkatalog oven på WooCommerce.');
