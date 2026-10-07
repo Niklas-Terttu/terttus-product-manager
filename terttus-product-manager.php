@@ -2,12 +2,12 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.4.0
+Version: 1.4.1
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.4.0');
+define('TPM_VERSION','1.4.1');
 function tpm_menu(){
  add_menu_page('Terttus Commerce','Terttus Commerce','manage_woocommerce','terttus-commerce','tpm_dashboard','dashicons-store',56);
  add_submenu_page('terttus-commerce','Dashboard','Dashboard','manage_woocommerce','terttus-commerce','tpm_dashboard');
@@ -17,7 +17,7 @@ function tpm_menu(){
  add_submenu_page('terttus-commerce','Lager','Lager','manage_woocommerce','terttus-stock','tpm_stock');
  add_submenu_page('terttus-commerce','Leverandører','Leverandører','manage_woocommerce','terttus-suppliers','tpm_suppliers');
 }add_action('admin_menu','tpm_menu',30);
-function tpm_assets($h){if(strpos($h,'terttus')===false)return;wp_enqueue_media();wp_enqueue_style('tpm',plugins_url('assets/admin.css',__FILE__),[],TPM_VERSION);wp_enqueue_script('tpm',plugins_url('assets/admin.js',__FILE__),['jquery'],TPM_VERSION,true);wp_localize_script('tpm','TPM',{ajax:ajaxurl,nonce:wp_create_nonce('tpm_dcs_import')});}add_action('admin_enqueue_scripts','tpm_assets');
+function tpm_assets($h){if(strpos($h,'terttus')===false)return;wp_enqueue_media();wp_enqueue_style('tpm',plugins_url('assets/admin.css',__FILE__),[],TPM_VERSION);wp_enqueue_script('tpm',plugins_url('assets/admin.js',__FILE__),['jquery'],TPM_VERSION,true);wp_localize_script('tpm','TPM',['ajax'=>admin_url('admin-ajax.php'),'nonce'=>wp_create_nonce('tpm_dcs_import')]);}add_action('admin_enqueue_scripts','tpm_assets');
 function tpm_val($p,$k,$d=''){if(!$p)return $d;if(in_array($k,['ean','brand','cost','supplier','supplier_sku','supplier_url'],true))return get_post_meta($p->get_id(),'_tpm_'.$k,true);$m=['name'=>'get_name','sku'=>'get_sku','price'=>'get_regular_price','sale'=>'get_sale_price','stock'=>'get_stock_quantity','stock_status'=>'get_stock_status','short_description'=>'get_short_description','description'=>'get_description','image'=>'get_image_id'];return isset($m[$k])?$p->{$m[$k]}():$d;}
 
 function tpm_money($v){return wc_price((float)$v,['decimals'=>2]);}
