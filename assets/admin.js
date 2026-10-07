@@ -22,7 +22,7 @@ jQuery(function($){
         let d=res.data||{},rows=[];
         [['name','Produkt'],['sku','Varenummer'],['ean','EAN'],['brand','Producent'],['model','Model']].forEach(x=>{if(d[x[0]])rows.push('<div><span>'+x[1]+'</span><strong>'+esc(d[x[0]])+'</strong></div>');});
         rows.push('<div><span>Billeder</span><strong>'+((d.images||[]).length)+' fundet</strong></div>');
-        rows.push('<div><span>Specifikationer</span><strong>'+((d.specs||[]).length)+' fundet</strong></div>');
+        rows.push('<div><span>Specifikationer</span><strong>'+((d.specs||[]).length)+' fundet</strong></div>');if(d.remote_stock_qty)rows.push('<div><span>Fjernlager</span><strong>'+esc(d.remote_stock_qty)+' stk.</strong></div>');if(d.remote_stock_date)rows.push('<div><span>DCS levering</span><strong>'+esc(d.remote_stock_date)+'</strong></div>');
         $r.html('<div class="tpm-import-found">'+rows.join('')+'</div><button type="button" class="button button-primary tpm-apply-dcs">Brug DCS-data</button><p class="description">Kostpris hentes ikke og skal indtastes manuelt.</p>').data('dcs',d);
       })
       .fail(function(xhr){
@@ -42,7 +42,7 @@ jQuery(function($){
     if(d.brand)$('[name=brand]').val(d.brand);
     $('[name=supplier]').val('DCS');
     if(d.sku)$('[name=supplier_sku]').val(d.sku);
-    if(d.supplier_url)$('[name=supplier_url]').val(d.supplier_url);
+    if(d.supplier_url)$('[name=supplier_url]').val(d.supplier_url);if(d.remote_stock_qty!==''&&d.remote_stock_qty!=null)$('[name=remote_stock_qty]').val(d.remote_stock_qty);if(d.remote_stock_date)$('[name=remote_stock_date]').val(d.remote_stock_date);
     if(d.description)$('[name=description]').val(d.description);
     if(d.images&&d.images.length){$('#tpm-main-url').val(d.images[0]);$('[name=gallery_image_urls]').val(d.images.slice(1).join('\n'));$('.tpm-preview-url').trigger('click');}
     if(d.specs&&d.specs.length){$('#tpm-specs').empty();d.specs.forEach(s=>$('#tpm-specs').append('<div class="tpm-spec"><input name="spec_name[]" value="'+esc(s.name)+'"><input name="spec_value[]" value="'+esc(s.value)+'"><button type="button" class="button tpm-remove-spec">×</button></div>'));}
