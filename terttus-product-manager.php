@@ -2,12 +2,84 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.5.0
+Version: 1.5.1
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.5.0');
+define('TPM_VERSION','1.5.1');
+define('TPM_GITHUB_REPO','Niklas-Terttu/terttus-product-manager');
+define('TPM_PLUGIN_BASENAME',plugin_basename(__FILE__));
+
+function tpm_github_token(){
+ if(defined('TERTTUS_GITHUB_TOKEN')&&TERTTUS_GITHUB_TOKEN)return trim((string)TERTTUS_GITHUB_TOKEN);
+ return '';
+}
+function tpm_github_request($endpoint){
+ $headers=['Accept'=>'application/vnd.github+json','User-Agent'=>'Terttus-Commerce/'.TPM_VERSION,'X-GitHub-Api-Version'=>'2022-11-28'];
+ $token=tpm_github_token();if($token)$headers['Authorization']='Bearer '.$token;
+ return wp_remote_get('https://api.github.com/repos/'.TPM_GITHUB_REPO.$endpoint,['timeout'=>15,'headers'=>$headers]);
+}
+function tpm_remote_version($force=false){
+ $key='tpm_github_update_meta';if(!$force){$cached=get_site_transient($key);if(is_array($cached))return $cached;}
+ $r=tpm_github_request('/contents/terttus-product-manager.php?ref=main');
+ if(is_wp_error($r)||200!==wp_remote_retrieve_response_code($r))return null;
+ $j=json_decode(wp_remote_retrieve_body($r),true);if(empty($j['content']))return null;
+ $src=base64_decode(str_replace(["\r","\n"],'',$j['content']),true);if(!$src)return null;
+ if(!preg_match('/^[ \t\/*#@]*Version:\s*(.+)$/mi',$src,$m))return null;
+ $data=['version'=>trim($m[1]),'details'=>'https://github.com/'.TPM_GITHUB_REPO,'package'=>'https://api.github.com/repos/'.TPM_GITHUB_REPO.'/zipball/main'];
+ set_site_transient($key,$data,15*MINUTE_IN_SECONDS);return $data;
+}
+function tpm_update_plugins($update,$plugin_data,$plugin_file){
+ if($plugin_file!==TPM_PLUGIN_BASENAME)return $update;$d=tpm_remote_version();
+ if(!$d||empty($d['version'])||version_compare(TPM_VERSION,$d['version'],'>='))return false;
+ return ['id'=>'github.com/'.TPM_GITHUB_REPO,'slug'=>dirname(TPM_PLUGIN_BASENAME),'version'=>$d['version'],'url'=>$d['details'],'package'=>$d['package']];
+}
+add_filter('update_plugins_'.plugin_basename(__FILE__),'tpm_update_plugins',10,3);
+function tpm_update_transient($transient){
+ if(!is_object($transient))$transient=new stdClass();$d=tpm_remote_version();
+ if($d&&!empty($d['version'])&&version_compare(TPM_VERSION,$d['version'],'<')){
+  $o=new stdClass();$o->slug=dirname(TPM_PLUGIN_BASENAME);$o->plugin=TPM_PLUGIN_BASENAME;$o->new_version=$d['version'];$o->url=$d['details'];$o->package=$d['package'];
+  $transient->response[TPM_PLUGIN_BASENAME]=$o;
+ }
+ return $transient;
+}
+add_filter('site_transient_update_plugins','tpm_update_transient');
+function tpm_upgrader_package_options($options){
+ if(empty($options['hook_extra']['plugin'])||$options['hook_extra']['plugin']!==TPM_PLUGIN_BASENAME)return $options;
+ $token=tpm_github_token();if($token)add_filter('http_request_args','tpm_github_download_auth',10,2);return $options;
+}
+add_filter('upgrader_package_options','tpm_upgrader_package_options');
+function tpm_github_download_auth($args,$url){
+ if(strpos($url,'api.github.com/repos/'.TPM_GITHUB_REPO.'/zipball/')===false)return $args;
+ $token=tpm_github_token();$args['headers']['Accept']='application/vnd.github+json';$args['headers']['User-Agent']='Terttus-Commerce/'.TPM_VERSION;if($token)$args['headers']['Authorization']='Bearer '.$token;return $args;
+}
+function tpm_upgrader_source($source,$remote_source,$upgrader,$hook_extra){
+ if(empty($hook_extra['plugin'])||$hook_extra['plugin']!==TPM_PLUGIN_BASENAME)return $source;
+ global $wp_filesystem;$target=trailingslashit($remote_source).dirname(TPM_PLUGIN_BASENAME);
+ if(untrailingslashit($source)===untrailingslashit($target))return $source;
+ if($wp_filesystem->exists($target))$wp_filesystem->delete($target,true);
+ if(!$wp_filesystem->move($source,$target,true))return new WP_Error('tpm_rename_failed','Kunne ikke klargøre Terttus Commerce-opdateringen.');
+ return trailingslashit($target);
+}
+add_filter('upgrader_source_selection','tpm_upgrader_source',10,4);
+function tpm_force_update_check(){
+ if(!current_user_can('update_plugins'))wp_die('Ingen adgang.');check_admin_referer('tpm_force_update');
+ delete_site_transient('tpm_github_update_meta');delete_site_transient('update_plugins');wp_update_plugins();
+ wp_safe_redirect(admin_url('plugins.php?tpm_checked=1'));exit;
+}
+add_action('admin_post_tpm_force_update','tpm_force_update_check');
+function tpm_plugin_action_links($links){
+ $url=wp_nonce_url(admin_url('admin-post.php?action=tpm_force_update_check'),'tpm_force_update');
+ $links[]='<a href="'.esc_url($url).'">Søg efter opdatering</a>';return $links;
+}
+add_filter('plugin_action_links_'.TPM_PLUGIN_BASENAME,'tpm_plugin_action_links');
+function tpm_private_repo_notice(){
+ if(!current_user_can('manage_options')||tpm_github_token())return;
+ echo '<div class="notice notice-warning"><p><strong>Terttus Commerce:</strong> Automatisk opdatering fra den private GitHub-repo kræver <code>TERTTUS_GITHUB_TOKEN</code> i wp-config.php. Tokenet skal kun have læseadgang til repo-indhold.</p></div>';
+}
+add_action('admin_notices','tpm_private_repo_notice');
+
 function tpm_menu(){
  add_menu_page('Terttus Commerce','Terttus Commerce','manage_woocommerce','terttus-commerce','tpm_dashboard','dashicons-store',56);
  add_submenu_page('terttus-commerce','Dashboard','Dashboard','manage_woocommerce','terttus-commerce','tpm_dashboard');
