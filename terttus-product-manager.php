@@ -2,12 +2,12 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.8.2
+Version: 1.8.3
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.8.2');
+define('TPM_VERSION','1.8.3');
 define('TPM_GITHUB_REPO','Niklas-Terttu/terttus-product-manager');
 define('TPM_PLUGIN_BASENAME',plugin_basename(__FILE__));
 
@@ -229,11 +229,17 @@ function tpm_dcs_csv_test(){
    if($code!==200)$result=['error'=>'DCS returnerede HTTP '.$code.'. Kontrollér IP-lås, link og at filen er klar.'];
    else{
     $body=wp_remote_retrieve_body($response);
+    $type=strtolower((string)wp_remote_retrieve_header($response,'content-type'));
+    $trim=ltrim($body," \\t\\r\\n\\xEF\\xBB\\xBF");
+    $looks_html=(strpos($trim,'<!doctype html')===0||strpos($trim,'<html')===0||strpos($type,'text/html')!==false);
     $lines=preg_split('/\\r\\n|\\n|\\r/',$body);
-    $rows=[];
-    foreach($lines as $line){if(trim($line)==='')continue;$rows[]=str_getcsv($line,';','"');if(count($rows)>=6)break;}
-    if(!$rows||count($rows[0])<2)$result=['error'=>'Filen blev hentet, men CSV-kolonner kunne ikke genkendes. Kontrollér skilletegnet.'];
-    else $result=['headers'=>array_shift($rows),'rows'=>$rows,'partial'=>strlen($body)>=262144];
+    $first='';foreach($lines as $line){if(trim($line)!==''){$first=$line;break;}}
+    $delimiter=';';$max=0;foreach([';',",","\\t",'|'] as $candidate){$count=count(str_getcsv($first,$candidate,'"'));if($count>$max){$max=$count;$delimiter=$candidate;}}
+    $rows=[];foreach($lines as $line){if(trim($line)==='')continue;$rows[]=str_getcsv($line,$delimiter,'"');if(count($rows)>=6)break;}
+    $diagnostics=['http'=>200,'content_type'=>$type?:'(ikke oplyst)','bytes'=>strlen($body),'delimiter'=>$delimiter==="\\t"?'TAB':$delimiter,'columns'=>$max,'html'=>$looks_html];
+    if($looks_html)$result=['error'=>'DCS returnerede en HTML-side i stedet for en CSV-fil. Kontrollér at linket peger direkte på prisfilen, og at den er klar.','diagnostics'=>$diagnostics];
+    elseif(!$rows||count($rows[0])<2)$result=['error'=>'Svaret kunne ikke fortolkes som en CSV med flere kolonner. Se tekniske oplysninger nedenfor.','diagnostics'=>$diagnostics];
+    else $result=['headers'=>array_shift($rows),'rows'=>$rows,'partial'=>strlen($body)>=262144,'diagnostics'=>$diagnostics];
    }
   }
   set_transient('tpm_dcs_csv_result_'.get_current_user_id(),$result,10*MINUTE_IN_SECONDS);
@@ -250,6 +256,7 @@ function tpm_suppliers(){
  echo '<section id="tpm-dcs-csv" class="tpm-card" style="margin:18px 0 24px"><h2>DCS-prisfil · forbindelsestest</h2><p>Indsæt dit private DCS-prisfillink. WordPress-serveren henter et begrænset udsnit og viser kolonner og op til fem varer. Der importeres eller ændres ingen produkter.</p>';
  echo '<form method="post" action="'.esc_url(admin_url('admin-post.php')).'">'.wp_nonce_field('tpm_dcs_csv_test','_wpnonce',true,false).'<input type="hidden" name="action" value="tpm_dcs_csv_test"><label for="tpm-dcs-csv-url"><strong>Privat DCS HTTPS-link</strong></label><p><input id="tpm-dcs-csv-url" type="url" name="dcs_csv_url" required value="'.esc_attr($csv_url).'" style="width:100%;max-width:800px" autocomplete="off" spellcheck="false"></p><button type="submit" class="button button-primary">Test forbindelse og vis CSV</button></form><p class="description">Linket gemmes som en privat WordPress-indstilling og vises kun til administratorer med WooCommerce-adgang. Del ikke linket offentligt.</p>';
  if(is_array($csv_result)){
+  if(!empty($csv_result['diagnostics'])){$d=$csv_result['diagnostics'];echo '<p class="description"><strong>Teknisk svar:</strong> HTTP '.esc_html($d['http']).' · Content-Type: '.esc_html($d['content_type']).' · Modtaget: '.esc_html($d['bytes']).' bytes · Skilletegn: '.esc_html($d['delimiter']).' · Kolonner: '.esc_html($d['columns']).($d['html']?' · HTML-svar':'').'</p>';}
   if(isset($csv_result['error']))echo '<div class="notice notice-error inline"><p>'.esc_html($csv_result['error']).'</p></div>';
   else{
    echo '<div class="notice notice-success inline"><p>Forbindelsen virker. CSV-kolonnerne blev genkendt.</p></div><div style="overflow-x:auto"><table class="widefat striped"><thead><tr>';
