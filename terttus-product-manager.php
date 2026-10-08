@@ -2,14 +2,15 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.8.4
+Version: 1.9.0
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.8.4');
+define('TPM_VERSION','1.9.0');
 define('TPM_GITHUB_REPO','Niklas-Terttu/terttus-product-manager');
 define('TPM_PLUGIN_BASENAME',plugin_basename(__FILE__));
+require_once __DIR__.'/includes/dcs-catalog.php';
 
 function tpm_github_token(){
  if(defined('TERTTUS_GITHUB_TOKEN')&&TERTTUS_GITHUB_TOKEN)return trim((string)TERTTUS_GITHUB_TOKEN);
@@ -284,6 +285,7 @@ function tpm_suppliers(){
   }
  }
  echo '</section>';
+ tpm_dcs_catalog_page();
  $ip_result=get_transient('tpm_ip_result_'.get_current_user_id());
  echo '<section id="tpm-server-ip" class="tpm-card" style="margin:18px 0 24px"><h2>Serverens udgående IPv4</h2><p>Kontrollér den offentlige IPv4, som WordPress bruger til udgående HTTPS-forespørgsler. Brug den til DCS IP-lås, hvis DCS-prisfilen hentes fra samme server.</p>';
  if(is_array($ip_result)){
