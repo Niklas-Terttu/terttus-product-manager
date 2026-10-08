@@ -50,7 +50,7 @@ function tpm_dcs_start_import(){
  if(is_wp_error($r)||wp_remote_retrieve_response_code($r)!==200){@unlink($path);wp_die('Kunne ikke hente DCS CSV. Kontrollér URL og adgang.');}
  $h=fopen($path,'rb');$first=$h?fgets($h):'';if($h)fclose($h);
  if(!$first||count(str_getcsv($first,';'))<5||stripos($first,'<html')!==false){@unlink($path);wp_die('DCS returnerede ikke en gyldig CSV.');}
- update_option('tpm_dcs_import_job',['path'=>$path,'offset'=>0,'count'=>0,'started'=>time(),'groups'=>$selected,'scanned'=>0],false);
+ update_option('tpm_dcs_import_job',['path'=>$path,'offset'=>0,'count'=>0,'started'=>time(),'groups'=>$selected,'scanned'=>0,'matched'=>0,'inserted'=>0,'updated'=>0],false);
  wp_schedule_single_event(time()+5,'tpm_dcs_import_batch');
  wp_safe_redirect(admin_url('admin.php?page=terttus-suppliers#tpm-dcs-catalog'));exit;
 }
@@ -64,13 +64,14 @@ function tpm_dcs_import_batch(){
  if(!isset($map['varenummer'])||!isset($map['varenavn'])){fclose($h);delete_option('tpm_dcs_import_job');update_option('tpm_dcs_import_error','CSV mangler Varenummer eller Varenavn.',false);@unlink($path);return;}
  if($job['offset']>0)fseek($h,(int)$job['offset']);
  $count=0;$table=tpm_dcs_table();
- while($count<300&&($row=fgetcsv($h,0,';','"','\\'))!==false){
+ while($count<2000&&($row=fgetcsv($h,0,';','"','\\'))!==false){
   if(!empty($job['stopped'])||!get_option('tpm_dcs_import_job'))break;
-  $job['scanned']=($job['scanned']??0)+1;
+  $count++;$job['scanned']=($job['scanned']??0)+1;
   $group=tpm_dcs_csv_col($row,$map,['Varegruppenavn']);
-  if(!empty($job['groups'])&&!in_array($group,$job['groups'],true)){$count++;continue;}
+  if(!empty($job['groups'])&&!in_array($group,$job['groups'],true))continue;
   $sku=tpm_dcs_csv_col($row,$map,['Varenummer']);$title=tpm_dcs_csv_col($row,$map,['Varenavn']);
   if($sku===''||$title==='')continue;
+  $job['matched']=($job['matched']??0)+1;
   $cost=(float)str_replace(',','.',tpm_dcs_csv_col($row,$map,['Pris']));
   $stock=max(0,(int)tpm_dcs_csv_col($row,$map,['Beholdning']));
   $remote=max(0,(int)tpm_dcs_csv_col($row,$map,['field_name.Antal på fjernlager','Antal på fjernlager']));
@@ -79,7 +80,7 @@ function tpm_dcs_import_batch(){
   $values=['supplier_sku'=>$sku,'title'=>$title,'brand'=>tpm_dcs_csv_col($row,$map,['Producentnavn']),'model'=>tpm_dcs_csv_col($row,$map,['Modelbetegnelse']),'group_name'=>tpm_dcs_csv_col($row,$map,['Varegruppenavn']),'subgroup'=>tpm_dcs_csv_col($row,$map,['Undergruppenavn']),'cost'=>$cost,'supplier_stock'=>$stock,'remote_stock'=>$remote,'lead_days'=>$days,'remote_days'=>$rdays,'updated_at'=>current_time('mysql')];
   $existing=$wpdb->get_row($wpdb->prepare("SELECT id,product_id FROM $table WHERE supplier_sku=%s",$sku));
   if($existing){
-   $wpdb->update($table,$values,['id'=>$existing->id]);
+   $wpdb->update($table,$values,['id'=>$existing->id]);$job['updated']=($job['updated']??0)+1;
    if($existing->product_id){
     $pid=(int)$existing->product_id;
     update_post_meta($pid,'_tpm_cost',$cost);
@@ -89,12 +90,11 @@ function tpm_dcs_import_batch(){
     update_post_meta($pid,'_tpm_dcs_remote_days',$rdays);
     $product=wc_get_product($pid);if($product&&!$product->managing_stock()){$product->set_stock_status(($stock+$remote)>0?'instock':'outofstock');$product->save();}
    }
-  }else $wpdb->insert($table,$values);
-  $count++;
+  }else {if($wpdb->insert($table,$values)!==false)$job['inserted']=($job['inserted']??0)+1;}
  }
  $done=feof($h);$job['offset']=ftell($h);$job['count']+=$count;fclose($h);
- if($done){@unlink($path);delete_option('tpm_dcs_import_job');update_option('tpm_dcs_last_import',['at'=>current_time('mysql'),'count'=>$job['count']],false);delete_option('tpm_dcs_import_error');}
- else{if(!get_option('tpm_dcs_import_job'))return;update_option('tpm_dcs_import_job',$job,false);wp_schedule_single_event(time()+10,'tpm_dcs_import_batch');}
+ if($done){@unlink($path);delete_option('tpm_dcs_import_job');update_option('tpm_dcs_last_import',['at'=>current_time('mysql'),'count'=>$job['count'],'scanned'=>$job['scanned'],'matched'=>$job['matched']??0,'inserted'=>$job['inserted']??0,'updated'=>$job['updated']??0],false);delete_option('tpm_dcs_import_error');}
+ else{if(!get_option('tpm_dcs_import_job'))return;update_option('tpm_dcs_import_job',$job,false);wp_schedule_single_event(time()+1,'tpm_dcs_import_batch');}
 }
 add_action('tpm_dcs_import_batch','tpm_dcs_import_batch');
 function tpm_dcs_stop_import(){
@@ -120,7 +120,11 @@ function tpm_dcs_catalog_page(){
  $rows=$wpdb->get_results($wpdb->prepare("SELECT * FROM $table WHERE $where ORDER BY product_id ASC, id DESC LIMIT %d OFFSET %d",...array_merge($params,[$per,($page-1)*$per])));
  $job=get_option('tpm_dcs_import_job');$last=get_option('tpm_dcs_last_import');$error=get_option('tpm_dcs_import_error');
  echo '<section id="tpm-dcs-catalog" class="tpm-card" style="margin:20px 0;padding:20px"><h2>DCS produktkatalog</h2><p>Alle varer er interne, indtil du udgiver dem. Prisforslag beregnes med moms (25 %) og valgt avance på kostprisen ekskl. moms.</p>';
- echo '<p><strong>'.number_format_i18n($total).' varer</strong> · '.($job?'Import kører: '.(int)$job['count'].' behandlet.':($last?'Seneste import: '.esc_html($last['at']):'Ingen fuldført import.')).'</p>';
+ echo '<p><strong>'.number_format_i18n($total).' varer i kataloget</strong></p>';
+ if($job){
+ echo '<p><strong>Import kører</strong> · CSV-linjer gennemgået: '.number_format_i18n((int)($job['scanned']??$job['count']??0)).' · Matchede varer: '.number_format_i18n((int)($job['matched']??0)).' · Nye varer: '.number_format_i18n((int)($job['inserted']??0)).' · Opdaterede varer: '.number_format_i18n((int)($job['updated']??0)).'</p>';
+ }elseif($last){echo '<p>Seneste import: '.esc_html($last['at']).' · '.number_format_i18n((int)($last['scanned']??$last['count']??0)).' linjer gennemgået · '.number_format_i18n((int)($last['inserted']??0)).' nye varer</p>';}
+ else echo '<p>Ingen fuldført import.</p>';
  if(isset($_GET['dcs_bulk_published']))echo '<p class="notice notice-success" style="padding:10px">'.(int)$_GET['dcs_bulk_published'].' varer udgivet.</p>';
  if(isset($_GET['dcs_enriched']))echo '<p class="notice notice-info" style="padding:10px">Produktdata hentet. '.(int)$_GET['dcs_enriched'].' nye oplysninger gemt.</p>';
  if($error)echo '<p style="color:#b42318">'.esc_html($error).'</p>';
