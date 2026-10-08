@@ -83,7 +83,7 @@ function tpm_dcs_import_batch(){
  if(!$path||!is_file($path)){delete_option('tpm_dcs_import_job');update_option('tpm_dcs_import_error','Importfilen mangler.',false);return;}
  $h=@fopen($path,'rb');if(!$h)return;
  $headers=fgetcsv($h,0,';','"','\\');if(!$headers){fclose($h);return;}
- $map=[];foreach($headers as $i=>$v)$map[mb_strtolower(tpm_dcs_catalog_text(trim((string)$v," \\t\\r\\n\\xEF\\xBB\\xBF")),'UTF-8')]=$i;
+ $map=[];foreach($headers as $i=>$v)$map[mb_strtolower(tpm_dcs_catalog_text(trim((string)$v," \t\r\n\xEF\xBB\xBF")),'UTF-8')]=$i;
  if(!isset($map['varenummer'])||!isset($map['varenavn'])){fclose($h);delete_option('tpm_dcs_import_job');update_option('tpm_dcs_import_error','CSV mangler varenummer eller varenavn.',false);@unlink($path);return;}
  if(!empty($job['offset']))fseek($h,(int)$job['offset']);
  $table=tpm_dcs_table();$rows=[];$count=0;$failed=false;
