@@ -2,12 +2,12 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.8.0
+Version: 1.8.1
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.8.0');
+define('TPM_VERSION','1.8.1');
 define('TPM_GITHUB_REPO','Niklas-Terttu/terttus-product-manager');
 define('TPM_PLUGIN_BASENAME',plugin_basename(__FILE__));
 
@@ -190,10 +190,35 @@ function tpm_stock(){
  foreach($products as$p){$cost=(float)get_post_meta($p->get_id(),'_tpm_cost',true);$price=(float)$p->get_regular_price();$net=$price/1.25;$margin=$net>0?(($net-$cost)/$net*100):0;echo '<tr><td><a href="'.esc_url(admin_url('admin.php?page=terttus-product-manager&product_id='.$p->get_id())).'">'.esc_html($p->get_name()).'</a></td><td>'.esc_html($p->get_sku()?:'—').'</td><td>'.esc_html(wc_get_product_stock_status_options()[$p->get_stock_status()]??$p->get_stock_status()).'</td><td>'.esc_html($p->managing_stock()?$p->get_stock_quantity():'—').'</td><td>'.wp_kses_post(tpm_money($cost)).'</td><td>'.wp_kses_post(tpm_money($price)).'</td><td>'.esc_html(number_format_i18n($margin,1)).'%</td></tr>';}
  echo '</tbody></table></section></div>';
 }
+function tpm_server_outbound_ip(){
+ $r=wp_remote_get('https://api.ipify.org?format=json',['timeout'=>12,'redirection'=>2,'headers'=>['Accept'=>'application/json'],'sslverify'=>true]);
+ if(is_wp_error($r))return new WP_Error('tpm_ip_error','Serveren kunne ikke kontakte IP-tjenesten: '.$r->get_error_message());
+ if(wp_remote_retrieve_response_code($r)!==200)return new WP_Error('tpm_ip_http','IP-tjenesten svarede med HTTP '.wp_remote_retrieve_response_code($r).'.');
+ $data=json_decode(wp_remote_retrieve_body($r),true);
+ $ip=is_array($data)?($data['ip']??''):'';
+ if(!filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4))return new WP_Error('tpm_ip_invalid','Tjenesten returnerede ikke en gyldig IPv4-adresse.');
+ return $ip;
+}
+function tpm_check_server_ip(){
+ if(!current_user_can('manage_woocommerce'))wp_die('Ingen adgang.');
+ check_admin_referer('tpm_check_server_ip');
+ $ip=tpm_server_outbound_ip();
+ set_transient('tpm_ip_result_'.get_current_user_id(),is_wp_error($ip)?['error'=>$ip->get_error_message()]:['ip'=>$ip],5*MINUTE_IN_SECONDS);
+ wp_safe_redirect(admin_url('admin.php?page=terttus-suppliers#tpm-server-ip'));exit;
+}
+add_action('admin_post_tpm_check_server_ip','tpm_check_server_ip');
 function tpm_suppliers(){
  tpm_admin_head('Leverandører','Overblik over de leverandører, der er knyttet til dine varer.');
  $products=wc_get_products(['limit'=>-1,'status'=>['publish','draft']]);$sup=[];
  foreach($products as$p){$name=trim((string)get_post_meta($p->get_id(),'_tpm_supplier',true));if(!$name)continue;if(!isset($sup[$name]))$sup[$name]=['count'=>0,'value'=>0];$sup[$name]['count']++;$sup[$name]['value']+=(float)get_post_meta($p->get_id(),'_tpm_cost',true)*max(0,(int)$p->get_stock_quantity());}
+ $ip_result=get_transient('tpm_ip_result_'.get_current_user_id());
+ echo '<section id="tpm-server-ip" class="tpm-card" style="margin:18px 0 24px"><h2>Serverens udgående IPv4</h2><p>Kontrollér den offentlige IPv4, som WordPress bruger til udgående HTTPS-forespørgsler. Brug den til DCS IP-lås, hvis DCS-prisfilen hentes fra samme server.</p>';
+ if(is_array($ip_result)){
+  if(isset($ip_result['ip']))echo '<p><strong style="font-size:22px">'.esc_html($ip_result['ip']).'</strong> <button type="button" class="button" id="tpm-copy-server-ip" data-ip="'.esc_attr($ip_result['ip']).'">Kopiér IP</button></p>';
+  elseif(isset($ip_result['error']))echo '<div class="notice notice-error inline"><p>'.esc_html($ip_result['error']).'</p></div>';
+ }
+ echo '<form method="post" action="'.esc_url(admin_url('admin-post.php')).'"><input type="hidden" name="action" value="tpm_check_server_ip">'.wp_nonce_field('tpm_check_server_ip','_wpnonce',true,false).'<button type="submit" class="button button-primary">Find serverens IP</button></form><p class="description">IP-adressen kan ændre sig på delt hosting. Bekræft hos Nordicway, at den er fast, før den bruges permanent til DCS.</p></section>';
+ echo '<script>document.addEventListener("click",function(e){var b=e.target.closest("#tpm-copy-server-ip");if(!b)return;var v=b.getAttribute("data-ip");if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(v).then(function(){b.textContent="Kopieret ✓";}).catch(function(){window.prompt("Kopiér IP:",v);});}else{window.prompt("Kopiér IP:",v);}});</script>';
  echo '<div class="tpm-supplier-grid">';if(!$sup)echo '<section class="tpm-card"><h2>Ingen leverandører endnu</h2><p>Tilføj fx DCS på dine produkter. Så samler vi automatisk overblikket her.</p></section>';foreach($sup as$name=>$d)echo '<section class="tpm-card"><span class="tpm-eyebrow">Leverandør</span><h2>'.esc_html($name).'</h2><p><strong>'.$d['count'].'</strong> produkter</p><p>Lagerets kostværdi: '.wp_kses_post(tpm_money($d['value'])).'</p></section>';echo '</div></div>';
 }
 
