@@ -27,14 +27,14 @@ function tpm_dcs_schema(){
  update_option('tpm_dcs_schema_version','1',false);
 }
 add_action('admin_init',function(){if(get_option('tpm_dcs_schema_version')!=='1'&&current_user_can('manage_woocommerce'))tpm_dcs_schema();});
-function tpm_dcs_text($value){
+function tpm_dcs_catalog_text($value){
  $value=(string)$value;
  if(!preg_match('//u',$value)){$converted=@iconv('Windows-1252','UTF-8//IGNORE',$value);if($converted!==false)$value=$converted;}
  if(preg_match('/(?:Ã.|Â.|â€|â€™)/u',$value)){$fixed=@iconv('UTF-8','Windows-1252//IGNORE',$value);if($fixed!==false&&preg_match('//u',$fixed)&&substr_count($fixed,'Ã')<substr_count($value,'Ã'))$value=$fixed;}
  return $value;
 }
 function tpm_dcs_csv_col($row,$map,$names,$default=''){
- foreach($names as $name){$key=mb_strtolower($name,'UTF-8');if(isset($map[$key]))return trim(tpm_dcs_text($row[$map[$key]]??$default));}return $default;
+ foreach($names as $name){$key=mb_strtolower($name,'UTF-8');if(isset($map[$key]))return trim(tpm_dcs_catalog_text($row[$map[$key]]??$default));}return $default;
 }
 function tpm_dcs_start_import(){
  if(!current_user_can('manage_woocommerce'))wp_die('Ingen adgang.');
@@ -60,7 +60,7 @@ function tpm_dcs_import_batch(){
  $path=$job['path']??'';if(!$path||!is_file($path)){delete_option('tpm_dcs_import_job');update_option('tpm_dcs_import_error','Importfilen mangler.',false);return;}
  $h=fopen($path,'rb');if(!$h)return;
  $headers=fgetcsv($h,0,';','"','\\');if(!$headers){fclose($h);return;}
- $map=[];foreach($headers as $i=>$v)$map[mb_strtolower(tpm_dcs_text(trim((string)$v," \t\r\n\xEF\xBB\xBF")),"UTF-8")]=$i;
+ $map=[];foreach($headers as $i=>$v)$map[mb_strtolower(tpm_dcs_catalog_text(trim((string)$v," \t\r\n\xEF\xBB\xBF")),"UTF-8")]=$i;
  if(!isset($map['varenummer'])||!isset($map['varenavn'])){fclose($h);delete_option('tpm_dcs_import_job');update_option('tpm_dcs_import_error','CSV mangler Varenummer eller Varenavn.',false);@unlink($path);return;}
  if($job['offset']>0)fseek($h,(int)$job['offset']);
  $count=0;$table=tpm_dcs_table();
@@ -145,7 +145,7 @@ function tpm_dcs_catalog_page(){
  echo '<div style="overflow-x:auto"><table class="widefat striped tpm-dcs-table"><colgroup><col style="width:3%"><col style="width:30%"><col style="width:11%"><col style="width:9%"><col style="width:12%"><col style="width:9%"><col style="width:29%"></colgroup><thead><tr><th><input type="checkbox" id="tpm-dcs-check-all" aria-label="Markér alle ikke oprettede varer"></th><th>Produkt</th><th>Indkøb</th><th>DCS lager</th><th>Fjernlager</th><th>Status</th><th>Kategori og pris</th></tr></thead><tbody>';
  $cats=get_terms(['taxonomy'=>'product_cat','hide_empty'=>false]);if(is_wp_error($cats))$cats=[];
  foreach($rows as $r){
-  echo '<tr><td>'.(!$r->product_id?'<input type="checkbox" class="tpm-dcs-row-check" value="'.(int)$r->id.'" aria-label="Markér vare">':'').'</td><td><strong>'.esc_html(tpm_dcs_text($r->title)).'</strong><br><small>'.esc_html(tpm_dcs_text($r->brand.' · '.$r->supplier_sku.' · '.$r->model)).'</small></td><td>'.esc_html(number_format_i18n((float)$r->cost,2)).' kr.</td><td>'.(int)$r->supplier_stock.'</td><td>'.(int)$r->remote_stock.' · '.(int)$r->remote_days.' dage</td>';
+  echo '<tr><td>'.(!$r->product_id?'<input type="checkbox" class="tpm-dcs-row-check" value="'.(int)$r->id.'" aria-label="Markér vare">':'').'</td><td><strong>'.esc_html(tpm_dcs_catalog_text($r->title)).'</strong><br><small>'.esc_html(tpm_dcs_catalog_text($r->brand.' · '.$r->supplier_sku.' · '.$r->model)).'</small></td><td>'.esc_html(number_format_i18n((float)$r->cost,2)).' kr.</td><td>'.(int)$r->supplier_stock.'</td><td>'.(int)$r->remote_stock.' · '.(int)$r->remote_days.' dage</td>';
   echo '<td>'.($r->product_id?'<a href="'.esc_url(get_edit_post_link((int)$r->product_id)).'">Udgivet</a>':'Ikke oprettet').'</td><td>';
   if(!$r->product_id){
    echo '<form class="tpm-dcs-actions" method="post" action="'.esc_url(admin_url('admin-post.php')).'" data-cost="'.esc_attr($r->cost).'">'.wp_nonce_field('tpm_dcs_publish','_wpnonce',true,false).'<input type="hidden" name="action" value="tpm_dcs_publish"><input type="hidden" name="row_id" value="'.(int)$r->id.'">';
@@ -193,7 +193,7 @@ function tpm_dcs_bulk_publish(){
   $r=$wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id=%d AND product_id=0",$id));
   if(!$r||wc_get_product_id_by_sku('DCS-'.$r->supplier_sku))continue;
   try{
-   $p=new WC_Product_Simple();$p->set_name(tpm_dcs_text($r->title));$p->set_status('publish');$p->set_sku('DCS-'.$r->supplier_sku);$p->set_regular_price($price);$p->set_category_ids([$cat]);$p->set_manage_stock(false);$p->set_stock_status(($r->supplier_stock+$r->remote_stock)>0?'instock':'outofstock');
+   $p=new WC_Product_Simple();$p->set_name(tpm_dcs_catalog_text($r->title));$p->set_status('publish');$p->set_sku('DCS-'.$r->supplier_sku);$p->set_regular_price($price);$p->set_category_ids([$cat]);$p->set_manage_stock(false);$p->set_stock_status(($r->supplier_stock+$r->remote_stock)>0?'instock':'outofstock');
    $pid=$p->save();if(!$pid)continue;
    foreach(['supplier'=>'DCS','dcs_sku'=>$r->supplier_sku,'cost'=>$r->cost,'dcs_stock'=>$r->supplier_stock,'remote_stock_qty'=>$r->remote_stock,'dcs_lead_days'=>$r->lead_days,'dcs_remote_days'=>$r->remote_days] as $k=>$v)update_post_meta($pid,'_tpm_'.$k,$v);
    $wpdb->update($table,['product_id'=>$pid],['id'=>$id,'product_id'=>0]);$success++;
