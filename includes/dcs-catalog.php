@@ -146,7 +146,8 @@ function tpm_dcs_catalog_page(){
  $rows=$wpdb->get_results($wpdb->prepare("SELECT * FROM $table WHERE $where ORDER BY product_id ASC, id DESC LIMIT %d OFFSET %d",...array_merge($params,[$per,($page-1)*$per])));
  $job=get_option('tpm_dcs_import_job');$last=get_option('tpm_dcs_last_import');$error=get_option('tpm_dcs_import_error');
  echo '<section id="tpm-dcs-catalog" class="tpm-card" style="margin:20px 0;padding:20px"><h2>DCS produktkatalog</h2><p>Alle varer er interne, indtil du udgiver dem. Prisforslag beregnes med moms (25 %) og valgt avance på kostprisen ekskl. moms.</p>';
- echo '<p><strong>'.number_format_i18n($total).' varer i kataloget</strong></p>';
+ $catalog_total=(int)$wpdb->get_var("SELECT COUNT(*) FROM $table");
+ echo '<p><strong>'.number_format_i18n($catalog_total).' varer i kataloget</strong></p>';
  if($job){
  echo '<p><strong>'.(!empty($job['failed'])?'Import sat på pause pga. fejl':'Import kører').'</strong> · CSV-linjer gennemgået: '.number_format_i18n((int)($job['scanned']??$job['count']??0)).' · Matchede varer: '.number_format_i18n((int)($job['matched']??0)).' · Nye varer: '.number_format_i18n((int)($job['inserted']??0)).' · Opdaterede varer: '.number_format_i18n((int)($job['updated']??0)).'</p>';
  }elseif($last){echo '<p>Seneste import: '.esc_html($last['at']).' · '.number_format_i18n((int)($last['scanned']??$last['count']??0)).' linjer gennemgået · '.number_format_i18n((int)($last['inserted']??0)).' nye varer</p>';}
