@@ -43,58 +43,82 @@ function tpm_dcs_start_import(){
  if(!$url||!tpm_dcs_csv_url_valid($url))wp_die('Gem først et gyldigt DCS-link under Leverandører.');
  if(get_option('tpm_dcs_import_job'))wp_die('En import er allerede i gang.');
  $selected=array_values(array_filter(array_map('sanitize_text_field',(array)wp_unslash($_POST['dcs_groups']??[]))));
- if(!$selected)wp_die('Vælg mindst én DCS-varegruppe.');
+ $all=!empty($_POST['dcs_all']);
+ if(!$all&&!$selected)wp_die('Vælg mindst én DCS-varegruppe eller hele kataloget.');
  $path=wp_tempnam('tpm-dcs-catalog.csv');
  if(!$path)wp_die('Kunne ikke oprette midlertidig fil.');
  $r=wp_safe_remote_get($url,['timeout'=>120,'redirection'=>2,'stream'=>true,'filename'=>$path,'headers'=>['Accept'=>'text/csv,text/plain,*/*']]);
  if(is_wp_error($r)||wp_remote_retrieve_response_code($r)!==200){@unlink($path);wp_die('Kunne ikke hente DCS CSV. Kontrollér URL og adgang.');}
  $h=fopen($path,'rb');$first=$h?fgets($h):'';if($h)fclose($h);
  if(!$first||count(str_getcsv($first,';'))<5||stripos($first,'<html')!==false){@unlink($path);wp_die('DCS returnerede ikke en gyldig CSV.');}
- update_option('tpm_dcs_import_job',['path'=>$path,'offset'=>0,'count'=>0,'started'=>time(),'groups'=>$selected,'scanned'=>0,'matched'=>0,'inserted'=>0,'updated'=>0],false);
+ update_option('tpm_dcs_import_job',['path'=>$path,'offset'=>0,'count'=>0,'started'=>time(),'groups'=>$all?[]:$selected,'all'=>$all,'scanned'=>0,'matched'=>0,'inserted'=>0,'updated'=>0],false);
  wp_schedule_single_event(time()+5,'tpm_dcs_import_batch');
  wp_safe_redirect(admin_url('admin.php?page=terttus-suppliers#tpm-dcs-catalog'));exit;
 }
 add_action('admin_post_tpm_dcs_start_import','tpm_dcs_start_import');
+/* Fast staging import: bounded multi-row SQL upserts. product_id is deliberately
+   excluded from updates so already published WooCommerce links survive. */
+function tpm_dcs_import_flush($table,$rows,&$job){
+ global $wpdb;
+ if(!$rows)return true;
+ $skus=array_keys($rows);
+ $placeholders=implode(',',array_fill(0,count($skus),'%s'));
+ $existing=$wpdb->get_col($wpdb->prepare("SELECT supplier_sku FROM $table WHERE supplier_sku IN ($placeholders)",...$skus));
+ $existing_set=array_fill_keys($existing,true);
+ $fields=['supplier_sku','title','brand','model','group_name','subgroup','cost','supplier_stock','remote_stock','lead_days','remote_days','updated_at'];
+ $formats=['%s','%s','%s','%s','%s','%s','%f','%d','%d','%d','%d','%s'];
+ $values=[];$tuples=[];
+ foreach($rows as $r){$tuples[]='('.implode(',',$formats).')';foreach($fields as $field)$values[]=$r[$field];}
+ $updates=[];foreach(array_slice($fields,1) as $field)$updates[]="`$field`=VALUES(`$field`)";
+ $sql="INSERT INTO $table (".implode(',',array_map(function($field){return "`$field`";},$fields)).") VALUES ".implode(',',$tuples)." ON DUPLICATE KEY UPDATE ".implode(',',$updates);
+ $result=$wpdb->query($wpdb->prepare($sql,...$values));
+ if($result===false)return false;
+ foreach($skus as $sku){if(isset($existing_set[$sku]))$job['updated']++;else $job['inserted']++;}
+ return true;
+}
 function tpm_dcs_import_batch(){
- global $wpdb;$job=get_option('tpm_dcs_import_job');if(!is_array($job)||!empty($job['stopped']))return;
- $path=$job['path']??'';if(!$path||!is_file($path)){delete_option('tpm_dcs_import_job');update_option('tpm_dcs_import_error','Importfilen mangler.',false);return;}
- $h=fopen($path,'rb');if(!$h)return;
+ global $wpdb;
+ $job=get_option('tpm_dcs_import_job');if(!is_array($job))return;
+ $path=$job['path']??'';
+ if(!$path||!is_file($path)){delete_option('tpm_dcs_import_job');update_option('tpm_dcs_import_error','Importfilen mangler.',false);return;}
+ $h=@fopen($path,'rb');if(!$h)return;
  $headers=fgetcsv($h,0,';','"','\\');if(!$headers){fclose($h);return;}
- $map=[];foreach($headers as $i=>$v)$map[mb_strtolower(tpm_dcs_catalog_text(trim((string)$v," \t\r\n\xEF\xBB\xBF")),"UTF-8")]=$i;
- if(!isset($map['varenummer'])||!isset($map['varenavn'])){fclose($h);delete_option('tpm_dcs_import_job');update_option('tpm_dcs_import_error','CSV mangler Varenummer eller Varenavn.',false);@unlink($path);return;}
- if($job['offset']>0)fseek($h,(int)$job['offset']);
- $count=0;$table=tpm_dcs_table();
- while($count<2000&&($row=fgetcsv($h,0,';','"','\\'))!==false){
-  if(!empty($job['stopped'])||!get_option('tpm_dcs_import_job'))break;
-  $count++;$job['scanned']=($job['scanned']??0)+1;
+ $map=[];foreach($headers as $i=>$v)$map[mb_strtolower(tpm_dcs_catalog_text(trim((string)$v," \\t\\r\\n\\xEF\\xBB\\xBF")),'UTF-8')]=$i;
+ if(!isset($map['varenummer'])||!isset($map['varenavn'])){fclose($h);delete_option('tpm_dcs_import_job');update_option('tpm_dcs_import_error','CSV mangler varenummer eller varenavn.',false);@unlink($path);return;}
+ if(!empty($job['offset']))fseek($h,(int)$job['offset']);
+ $table=tpm_dcs_table();$rows=[];$count=0;$failed=false;
+ $limit=5000;
+ while($count<$limit&&($row=fgetcsv($h,0,';','"','\\'))!==false){
+  if(!get_option('tpm_dcs_import_job'))break;
+  $count++;$job['scanned']++;
   $group=tpm_dcs_csv_col($row,$map,['Varegruppenavn']);
   if(!empty($job['groups'])&&!in_array($group,$job['groups'],true))continue;
   $sku=tpm_dcs_csv_col($row,$map,['Varenummer']);$title=tpm_dcs_csv_col($row,$map,['Varenavn']);
   if($sku===''||$title==='')continue;
-  $job['matched']=($job['matched']??0)+1;
-  $cost=(float)str_replace(',','.',tpm_dcs_csv_col($row,$map,['Pris']));
-  $stock=max(0,(int)tpm_dcs_csv_col($row,$map,['Beholdning']));
-  $remote=max(0,(int)tpm_dcs_csv_col($row,$map,['field_name.Antal på fjernlager','Antal på fjernlager']));
-  $days=max(0,(int)tpm_dcs_csv_col($row,$map,['Leveringstid']));
-  $rdays=max(0,(int)tpm_dcs_csv_col($row,$map,['field_name.Antal dage fra fjernlager','Antal dage fra fjernlager']));
-  $values=['supplier_sku'=>$sku,'title'=>$title,'brand'=>tpm_dcs_csv_col($row,$map,['Producentnavn']),'model'=>tpm_dcs_csv_col($row,$map,['Modelbetegnelse']),'group_name'=>tpm_dcs_csv_col($row,$map,['Varegruppenavn']),'subgroup'=>tpm_dcs_csv_col($row,$map,['Undergruppenavn']),'cost'=>$cost,'supplier_stock'=>$stock,'remote_stock'=>$remote,'lead_days'=>$days,'remote_days'=>$rdays,'updated_at'=>current_time('mysql')];
-  $existing=$wpdb->get_row($wpdb->prepare("SELECT id,product_id FROM $table WHERE supplier_sku=%s",$sku));
-  if($existing){
-   $wpdb->update($table,$values,['id'=>$existing->id]);$job['updated']=($job['updated']??0)+1;
-   if($existing->product_id){
-    $pid=(int)$existing->product_id;
-    update_post_meta($pid,'_tpm_cost',$cost);
-    update_post_meta($pid,'_tpm_remote_stock_qty',$remote);
-    update_post_meta($pid,'_tpm_dcs_stock',$stock);
-    update_post_meta($pid,'_tpm_dcs_lead_days',$days);
-    update_post_meta($pid,'_tpm_dcs_remote_days',$rdays);
-    $product=wc_get_product($pid);if($product&&!$product->managing_stock()){$product->set_stock_status(($stock+$remote)>0?'instock':'outofstock');$product->save();}
-   }
-  }else {if($wpdb->insert($table,$values)!==false)$job['inserted']=($job['inserted']??0)+1;}
+  $job['matched']++;
+  $rows[$sku]=[
+   'supplier_sku'=>$sku,'title'=>$title,
+   'brand'=>tpm_dcs_csv_col($row,$map,['Producentnavn']),
+   'model'=>tpm_dcs_csv_col($row,$map,['Modelbetegnelse']),
+   'group_name'=>$group,'subgroup'=>tpm_dcs_csv_col($row,$map,['Undergruppenavn']),
+   'cost'=>(float)str_replace(',','.',tpm_dcs_csv_col($row,$map,['Pris'])),
+   'supplier_stock'=>max(0,(int)tpm_dcs_csv_col($row,$map,['Beholdning'])),
+   'remote_stock'=>max(0,(int)tpm_dcs_csv_col($row,$map,['field_name.Antal på fjernlager','Antal på fjernlager'])),
+   'lead_days'=>max(0,(int)tpm_dcs_csv_col($row,$map,['Leveringstid'])),
+   'remote_days'=>max(0,(int)tpm_dcs_csv_col($row,$map,['field_name.Antal dage fra fjernlager','Antal dage fra fjernlager'])),
+   'updated_at'=>current_time('mysql')
+  ];
+  if(count($rows)>=200){if(!tpm_dcs_import_flush($table,$rows,$job)){$failed=true;break;}$rows=[];}
  }
- $done=feof($h);$job['offset']=ftell($h);$job['count']+=$count;fclose($h);
- if($done){@unlink($path);delete_option('tpm_dcs_import_job');update_option('tpm_dcs_last_import',['at'=>current_time('mysql'),'count'=>$job['count'],'scanned'=>$job['scanned'],'matched'=>$job['matched']??0,'inserted'=>$job['inserted']??0,'updated'=>$job['updated']??0],false);delete_option('tpm_dcs_import_error');}
- else{if(!get_option('tpm_dcs_import_job'))return;update_option('tpm_dcs_import_job',$job,false);wp_schedule_single_event(time()+1,'tpm_dcs_import_batch');}
+ if(!$failed&&$rows&&!tpm_dcs_import_flush($table,$rows,$job))$failed=true;
+ $done=feof($h);$job['offset']=ftell($h);$job['count']=($job['count']??0)+$count;fclose($h);
+ if($failed){update_option('tpm_dcs_import_error','Databasefejl under masseimport. Importen er sat på pause; de allerede gemte varer er bevaret.',false);$job['failed']=true;update_option('tpm_dcs_import_job',$job,false);return;}
+ if(!get_option('tpm_dcs_import_job'))return;
+ if($done){
+  @unlink($path);delete_option('tpm_dcs_import_job');
+  update_option('tpm_dcs_last_import',['at'=>current_time('mysql'),'count'=>$job['count'],'scanned'=>$job['scanned'],'matched'=>$job['matched'],'inserted'=>$job['inserted'],'updated'=>$job['updated']],false);
+  delete_option('tpm_dcs_import_error');
+ }else{update_option('tpm_dcs_import_job',$job,false);wp_schedule_single_event(time()+1,'tpm_dcs_import_batch');}
 }
 add_action('tpm_dcs_import_batch','tpm_dcs_import_batch');
 function tpm_dcs_stop_import(){
@@ -122,7 +146,7 @@ function tpm_dcs_catalog_page(){
  echo '<section id="tpm-dcs-catalog" class="tpm-card" style="margin:20px 0;padding:20px"><h2>DCS produktkatalog</h2><p>Alle varer er interne, indtil du udgiver dem. Prisforslag beregnes med moms (25 %) og valgt avance på kostprisen ekskl. moms.</p>';
  echo '<p><strong>'.number_format_i18n($total).' varer i kataloget</strong></p>';
  if($job){
- echo '<p><strong>Import kører</strong> · CSV-linjer gennemgået: '.number_format_i18n((int)($job['scanned']??$job['count']??0)).' · Matchede varer: '.number_format_i18n((int)($job['matched']??0)).' · Nye varer: '.number_format_i18n((int)($job['inserted']??0)).' · Opdaterede varer: '.number_format_i18n((int)($job['updated']??0)).'</p>';
+ echo '<p><strong>'.(!empty($job['failed'])?'Import sat på pause pga. fejl':'Import kører').'</strong> · CSV-linjer gennemgået: '.number_format_i18n((int)($job['scanned']??$job['count']??0)).' · Matchede varer: '.number_format_i18n((int)($job['matched']??0)).' · Nye varer: '.number_format_i18n((int)($job['inserted']??0)).' · Opdaterede varer: '.number_format_i18n((int)($job['updated']??0)).'</p>';
  }elseif($last){echo '<p>Seneste import: '.esc_html($last['at']).' · '.number_format_i18n((int)($last['scanned']??$last['count']??0)).' linjer gennemgået · '.number_format_i18n((int)($last['inserted']??0)).' nye varer</p>';}
  else echo '<p>Ingen fuldført import.</p>';
  if(isset($_GET['dcs_bulk_published']))echo '<p class="notice notice-success" style="padding:10px">'.(int)$_GET['dcs_bulk_published'].' varer udgivet.</p>';
@@ -133,7 +157,7 @@ function tpm_dcs_catalog_page(){
  echo '<form method="post" action="'.esc_url(admin_url('admin-post.php')).'">'.wp_nonce_field('tpm_dcs_stop_import','_wpnonce',true,false).'<input type="hidden" name="action" value="tpm_dcs_stop_import"><button class="button button-secondary">Stop import og behold varer</button></form>';
  }else{
  echo '<form method="post" action="'.esc_url(admin_url('admin-post.php')).'">'.wp_nonce_field('tpm_dcs_start_import','_wpnonce',true,false).'<input type="hidden" name="action" value="tpm_dcs_start_import">';
- echo '<p><strong>Vælg DCS-varegrupper til import</strong> (kun valgte grupper indlæses)</p><div style="display:flex;flex-wrap:wrap;gap:8px 18px;max-height:210px;overflow:auto;padding:10px;border:1px solid #ddd;border-radius:6px">';
+ echo '<p><label><input type="checkbox" name="dcs_all" value="1" style="width:16px;height:16px;min-height:0"> <strong>Importér HELE DCS-kataloget (alle varegrupper)</strong></label></p><p><strong>Eller vælg enkelte DCS-varegrupper</strong></p><div style="display:flex;flex-wrap:wrap;gap:8px 18px;max-height:210px;overflow:auto;padding:10px;border:1px solid #ddd;border-radius:6px">';
  foreach(tpm_dcs_available_groups() as $group)echo '<label style="min-width:190px"><input type="checkbox" name="dcs_groups[]" value="'.esc_attr($group).'"> '.esc_html($group).'</label>';
  echo '</div><p class="description">Listen er baseret på allerede indlæste varegrupper. Hvis en gruppe mangler, kan den tilføjes her:</p><input name="dcs_groups[]" placeholder="DCS-varegruppenavn" style="width:300px;max-width:100%"> <button class="button button-primary">Importér valgte varegrupper</button></form>';
  }
