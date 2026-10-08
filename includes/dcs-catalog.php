@@ -161,7 +161,7 @@ function tpm_dcs_catalog_page(){
  }else{
  echo '<form method="post" action="'.esc_url(admin_url('admin-post.php')).'">'.wp_nonce_field('tpm_dcs_start_import','_wpnonce',true,false).'<input type="hidden" name="action" value="tpm_dcs_start_import">';
  echo '<p><label><input type="checkbox" name="dcs_all" value="1" style="width:16px;height:16px;min-height:0"> <strong>Importér HELE DCS-kataloget (alle varegrupper)</strong></label></p><p><strong>Eller vælg enkelte DCS-varegrupper</strong></p><div style="display:flex;flex-wrap:wrap;gap:8px 18px;max-height:210px;overflow:auto;padding:10px;border:1px solid #ddd;border-radius:6px">';
- foreach(tpm_dcs_available_groups() as $group)echo '<label style="min-width:190px"><input type="checkbox" name="dcs_groups[]" value="'.esc_attr($group).'"> '.esc_html($group).'</label>';
+ foreach(tpm_dcs_available_groups() as $import_group)echo '<label style="min-width:190px"><input type="checkbox" name="dcs_groups[]" value="'.esc_attr($import_group).'"> '.esc_html($import_group).'</label>';
  echo '</div><p class="description">Listen er baseret på allerede indlæste varegrupper. Hvis en gruppe mangler, kan den tilføjes her:</p><input name="dcs_groups[]" placeholder="DCS-varegruppenavn" style="width:300px;max-width:100%"> <button class="button button-primary">Importér valgte varegrupper</button></form>';
  }
  $sync=get_option('tpm_dcs_active_sync_job');$sync_last=get_option('tpm_dcs_active_sync_last');
