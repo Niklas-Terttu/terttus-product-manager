@@ -36,19 +36,21 @@ function tpm_dcs_start_import(){
  $url=get_option('tpm_dcs_csv_url','');
  if(!$url||!tpm_dcs_csv_url_valid($url))wp_die('Gem først et gyldigt DCS-link under Leverandører.');
  if(get_option('tpm_dcs_import_job'))wp_die('En import er allerede i gang.');
+ $selected=array_values(array_filter(array_map('sanitize_text_field',(array)wp_unslash($_POST['dcs_groups']??[]))));
+ if(!$selected)wp_die('Vælg mindst én DCS-varegruppe.');
  $path=wp_tempnam('tpm-dcs-catalog.csv');
  if(!$path)wp_die('Kunne ikke oprette midlertidig fil.');
  $r=wp_safe_remote_get($url,['timeout'=>120,'redirection'=>2,'stream'=>true,'filename'=>$path,'headers'=>['Accept'=>'text/csv,text/plain,*/*']]);
  if(is_wp_error($r)||wp_remote_retrieve_response_code($r)!==200){@unlink($path);wp_die('Kunne ikke hente DCS CSV. Kontrollér URL og adgang.');}
  $h=fopen($path,'rb');$first=$h?fgets($h):'';if($h)fclose($h);
  if(!$first||count(str_getcsv($first,';'))<5||stripos($first,'<html')!==false){@unlink($path);wp_die('DCS returnerede ikke en gyldig CSV.');}
- update_option('tpm_dcs_import_job',['path'=>$path,'offset'=>0,'count'=>0,'started'=>time()],false);
+ update_option('tpm_dcs_import_job',['path'=>$path,'offset'=>0,'count'=>0,'started'=>time(),'groups'=>$selected,'scanned'=>0],false);
  wp_schedule_single_event(time()+5,'tpm_dcs_import_batch');
  wp_safe_redirect(admin_url('admin.php?page=terttus-suppliers#tpm-dcs-catalog'));exit;
 }
 add_action('admin_post_tpm_dcs_start_import','tpm_dcs_start_import');
 function tpm_dcs_import_batch(){
- global $wpdb;$job=get_option('tpm_dcs_import_job');if(!is_array($job))return;
+ global $wpdb;$job=get_option('tpm_dcs_import_job');if(!is_array($job)||!empty($job['stopped']))return;
  $path=$job['path']??'';if(!$path||!is_file($path)){delete_option('tpm_dcs_import_job');update_option('tpm_dcs_import_error','Importfilen mangler.',false);return;}
  $h=fopen($path,'rb');if(!$h)return;
  $headers=fgetcsv($h,0,';','"','\\');if(!$headers){fclose($h);return;}
@@ -57,6 +59,10 @@ function tpm_dcs_import_batch(){
  if($job['offset']>0)fseek($h,(int)$job['offset']);
  $count=0;$table=tpm_dcs_table();
  while($count<300&&($row=fgetcsv($h,0,';','"','\\'))!==false){
+  if(!empty($job['stopped'])||!get_option('tpm_dcs_import_job'))break;
+  $job['scanned']=($job['scanned']??0)+1;
+  $group=tpm_dcs_csv_col($row,$map,['Varegruppenavn']);
+  if(!empty($job['groups'])&&!in_array($group,$job['groups'],true)){$count++;continue;}
   $sku=tpm_dcs_csv_col($row,$map,['Varenummer']);$title=tpm_dcs_csv_col($row,$map,['Varenavn']);
   if($sku===''||$title==='')continue;
   $cost=(float)str_replace(',','.',tpm_dcs_csv_col($row,$map,['Pris']));
@@ -82,9 +88,23 @@ function tpm_dcs_import_batch(){
  }
  $done=feof($h);$job['offset']=ftell($h);$job['count']+=$count;fclose($h);
  if($done){@unlink($path);delete_option('tpm_dcs_import_job');update_option('tpm_dcs_last_import',['at'=>current_time('mysql'),'count'=>$job['count']],false);delete_option('tpm_dcs_import_error');}
- else{update_option('tpm_dcs_import_job',$job,false);wp_schedule_single_event(time()+10,'tpm_dcs_import_batch');}
+ else{if(!get_option('tpm_dcs_import_job'))return;update_option('tpm_dcs_import_job',$job,false);wp_schedule_single_event(time()+10,'tpm_dcs_import_batch');}
 }
 add_action('tpm_dcs_import_batch','tpm_dcs_import_batch');
+function tpm_dcs_stop_import(){
+ if(!current_user_can('manage_woocommerce'))wp_die('Ingen adgang.');
+ check_admin_referer('tpm_dcs_stop_import');
+ $job=get_option('tpm_dcs_import_job');
+ if(is_array($job)){delete_option('tpm_dcs_import_job');if(!empty($job['path'])&&is_file($job['path']))@unlink($job['path']);}
+ wp_clear_scheduled_hook('tpm_dcs_import_batch');
+ update_option('tpm_dcs_import_notice','Import stoppet. Allerede indlæste varer er bevaret.',false);
+ wp_safe_redirect(admin_url('admin.php?page=terttus-suppliers#tpm-dcs-catalog'));exit;
+}
+add_action('admin_post_tpm_dcs_stop_import','tpm_dcs_stop_import');
+function tpm_dcs_available_groups(){
+ global $wpdb;$table=tpm_dcs_table();
+ return $wpdb->get_col("SELECT DISTINCT group_name FROM $table WHERE group_name <> '' ORDER BY group_name ASC LIMIT 200");
+}
 function tpm_dcs_catalog_page(){
  if(!current_user_can('manage_woocommerce'))wp_die('Ingen adgang.');
  global $wpdb;$table=tpm_dcs_table();$search=sanitize_text_field(wp_unslash($_GET['dcs_search']??''));$page=max(1,absint($_GET['dcs_page']??1));$per=30;
@@ -95,7 +115,15 @@ function tpm_dcs_catalog_page(){
  echo '<section id="tpm-dcs-catalog" class="tpm-card" style="margin:20px 0;padding:20px"><h2>DCS produktkatalog</h2><p>Alle varer er interne, indtil du udgiver dem. Prisforslag beregnes med moms (25 %) og valgt avance på kostprisen ekskl. moms.</p>';
  echo '<p><strong>'.number_format_i18n($total).' varer</strong> · '.($job?'Import kører: '.(int)$job['count'].' behandlet.':($last?'Seneste import: '.esc_html($last['at']):'Ingen fuldført import.')).'</p>';
  if($error)echo '<p style="color:#b42318">'.esc_html($error).'</p>';
- echo '<form method="post" action="'.esc_url(admin_url('admin-post.php')).'">'.wp_nonce_field('tpm_dcs_start_import','_wpnonce',true,false).'<input type="hidden" name="action" value="tpm_dcs_start_import"><button class="button button-primary" '.($job?'disabled':'').'>'.($job?'Import i gang':'Hent/opdatér alle DCS-varer').'</button></form>';
+ if($notice=get_option('tpm_dcs_import_notice')){echo '<p class="notice notice-success" style="padding:10px">'.esc_html($notice).'</p>';delete_option('tpm_dcs_import_notice');}
+ if($job){
+ echo '<form method="post" action="'.esc_url(admin_url('admin-post.php')).'">'.wp_nonce_field('tpm_dcs_stop_import','_wpnonce',true,false).'<input type="hidden" name="action" value="tpm_dcs_stop_import"><button class="button button-secondary">Stop import og behold varer</button></form>';
+ }else{
+ echo '<form method="post" action="'.esc_url(admin_url('admin-post.php')).'">'.wp_nonce_field('tpm_dcs_start_import','_wpnonce',true,false).'<input type="hidden" name="action" value="tpm_dcs_start_import">';
+ echo '<p><strong>Vælg DCS-varegrupper til import</strong> (kun valgte grupper indlæses)</p><div style="display:flex;flex-wrap:wrap;gap:8px 18px;max-height:210px;overflow:auto;padding:10px;border:1px solid #ddd;border-radius:6px">';
+ foreach(tpm_dcs_available_groups() as $group)echo '<label style="min-width:190px"><input type="checkbox" name="dcs_groups[]" value="'.esc_attr($group).'"> '.esc_html($group).'</label>';
+ echo '</div><p class="description">Listen er baseret på allerede indlæste varegrupper. Hvis en gruppe mangler, kan den tilføjes her:</p><input name="dcs_groups[]" placeholder="DCS-varegruppenavn" style="width:300px;max-width:100%"> <button class="button button-primary">Importér valgte varegrupper</button></form>';
+ }
  echo '<form method="get" style="display:flex;gap:8px;margin:14px 0"><input type="hidden" name="page" value="terttus-suppliers"><input name="dcs_search" value="'.esc_attr($search).'" placeholder="Søg navn, varenummer eller mærke" style="width:330px;max-width:65%"><button class="button">Søg</button></form>';
  echo '<p style="display:flex;align-items:center;gap:8px"><label for="tpm-dcs-margin">Prisforslag, avance:</label><select id="tpm-dcs-margin"><option value="15">15 %</option><option value="20" selected>20 %</option><option value="25">25 %</option><option value="30">30 %</option><option value="40">40 %</option></select><span class="description">Du kan altid rette prisen manuelt.</span></p>';
  echo '<style>#tpm-dcs-catalog .tpm-dcs-table{table-layout:fixed;width:100%}#tpm-dcs-catalog .tpm-dcs-table td,#tpm-dcs-catalog .tpm-dcs-table th{padding:9px 8px;vertical-align:middle}#tpm-dcs-catalog .tpm-dcs-table td:first-child{overflow-wrap:anywhere}#tpm-dcs-catalog .tpm-dcs-actions{display:flex;flex-wrap:wrap;gap:5px;align-items:center}#tpm-dcs-catalog .tpm-dcs-actions select{width:160px;max-width:100%;min-height:32px}#tpm-dcs-catalog .tpm-dcs-actions input{width:115px;min-height:32px}#tpm-dcs-catalog .tpm-dcs-actions button{min-height:32px}#tpm-dcs-catalog .tpm-dcs-actions .tpm-dcs-new{width:150px}@media(max-width:1100px){#tpm-dcs-catalog .tpm-dcs-table{min-width:900px}}</style>';
@@ -135,16 +163,5 @@ function tpm_dcs_publish(){
 }
 add_action('admin_post_tpm_dcs_publish','tpm_dcs_publish');
 
-/* Daily refresh only if a previous import has completed. */
-add_action('init',function(){if(!wp_next_scheduled('tpm_dcs_daily_sync'))wp_schedule_event(time()+HOUR_IN_SECONDS,'daily','tpm_dcs_daily_sync');});
-add_action('tpm_dcs_daily_sync',function(){
- if(!get_option('tpm_dcs_last_import')||get_option('tpm_dcs_import_job'))return;
- $url=get_option('tpm_dcs_csv_url','');if(!$url||!tpm_dcs_csv_url_valid($url))return;
- $path=wp_tempnam('tpm-dcs-daily.csv');if(!$path)return;
- $r=wp_safe_remote_get($url,['timeout'=>120,'redirection'=>2,'stream'=>true,'filename'=>$path]);
- if(is_wp_error($r)||wp_remote_retrieve_response_code($r)!==200){@unlink($path);update_option('tpm_dcs_import_error','Automatisk hentning fejlede.',false);return;}
- $h=fopen($path,'rb');$header=$h?fgetcsv($h,0,';','"','\\'):false;if($h)fclose($h);
- if(!$header||!in_array('Varenummer',$header,true)||!in_array('Varenavn',$header,true)){@unlink($path);update_option('tpm_dcs_import_error','Automatisk CSV-kontrol fejlede.',false);return;}
- update_option('tpm_dcs_import_job',['path'=>$path,'offset'=>0,'count'=>0,'started'=>time()],false);
- wp_schedule_single_event(time()+5,'tpm_dcs_import_batch');
-});
+/* Full catalog daily sync disabled: published products retain their existing data until selective refresh is implemented. */
+add_action('init',function(){wp_clear_scheduled_hook('tpm_dcs_daily_sync');});
