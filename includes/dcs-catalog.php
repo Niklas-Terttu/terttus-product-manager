@@ -282,22 +282,90 @@ function tpm_dcs_enrich(){
   if($name!==''&&$value!==''&&mb_strlen($name)<100&&mb_strlen($value)<500)$specs[]=['name'=>$name,'value'=>$value];
   if(count($specs)>=40)break;
  }
- $changed=0;
- if(!$product->get_description()&&$description!==''){$product->set_description($description);$changed++;}
- if(!$product->get_image_id()&&$images){
-  foreach(array_unique($images) as $img){
-   if(strpos($img,'//')===0)$img='https:'.$img;elseif(strpos($img,'/')===0)$img='https://'.$host.$img;
-   $image_host=strtolower((string)wp_parse_url($img,PHP_URL_HOST));
-   if(!preg_match('/(^|\\.)dcs\\.dk$/',$image_host))continue;
-   $image_id=tpm_import_image_url($img,$product->get_id());
-   if($image_id){$product->set_image_id($image_id);$changed++;break;}
-  }
+
+ // Preview only: never mutate WooCommerce products during extraction.
+ $valid_images=[];
+ foreach(array_unique($images) as $img){
+  if(strpos($img,'//')===0)$img='https:'.$img;elseif(strpos($img,'/')===0)$img='https://'.$host.$img;
+  $image_host=strtolower((string)wp_parse_url($img,PHP_URL_HOST));
+  if(wp_parse_url($img,PHP_URL_SCHEME)==='https'&&preg_match('/(^|\\.)dcs\\.dk$/',$image_host)&&wp_http_validate_url($img))$valid_images[]=$img;
  }
- if(!get_post_meta($product->get_id(),'_tpm_specs',true)&&$specs){update_post_meta($product->get_id(),'_tpm_specs',$specs);$changed++;}
- $product->save();update_post_meta($product->get_id(),'_tpm_supplier_url',$url);
- wp_safe_redirect(add_query_arg(['page'=>'terttus-suppliers','dcs_enriched'=>$changed],admin_url('admin.php')).'#tpm-dcs-catalog');exit;
+ $token=wp_generate_password(24,false,false);
+ set_transient('tpm_dcs_review_'.get_current_user_id().'_'.$token,['row_id'=>$id,'product_id'=>(int)$r->product_id,'url'=>$url,'description'=>$description,'images'=>array_slice($valid_images,0,8),'specs'=>$specs],20*MINUTE_IN_SECONDS);
+ wp_safe_redirect(add_query_arg(['page'=>'terttus-dcs-review','token'=>$token],admin_url('admin.php')));exit;
 }
 add_action('admin_post_tpm_dcs_enrich','tpm_dcs_enrich');
+
+/* Human approval step for DCS enrichment. The supplier HTML is never saved directly. */
+add_action('admin_menu',function(){
+ add_submenu_page(null,'Klargør DCS-produkt','Klargør DCS-produkt','manage_woocommerce','terttus-dcs-review','tpm_dcs_review_page');
+});
+function tpm_dcs_review_data(){
+ $token=sanitize_text_field(wp_unslash($_REQUEST['token']??''));
+ if(!preg_match('/^[A-Za-z0-9]{24}$/',$token))return false;
+ return get_transient('tpm_dcs_review_'.get_current_user_id().'_'.$token);
+}
+function tpm_dcs_review_page(){
+ if(!current_user_can('manage_woocommerce'))wp_die('Ingen adgang.');
+ $data=tpm_dcs_review_data();if(!$data)wp_die('Forhåndsvisningen er udløbet. Hent produktdata igen.');
+ $product=wc_get_product($data['product_id']);if(!$product)wp_die('Produktet findes ikke længere.');
+ echo '<div class="wrap"><h1>Klargør produkt: '.esc_html($product->get_name()).'</h1><p>Gennemgå og godkend hver del før den gemmes. Ingen ændringer er gemt endnu.</p>';
+ echo '<p><a href="'.esc_url(admin_url('admin.php?page=terttus-suppliers#tpm-dcs-catalog')).'">← Tilbage uden at gemme</a></p>';
+ echo '<form method="post" action="'.esc_url(admin_url('admin-post.php')).'">';
+ wp_nonce_field('tpm_dcs_review_save');
+ echo '<input type="hidden" name="action" value="tpm_dcs_review_save"><input type="hidden" name="token" value="'.esc_attr(sanitize_text_field(wp_unslash($_GET['token']??''))).'">';
+ echo '<div style="max-width:920px;background:white;padding:24px;border:1px solid #ddd;border-radius:8px">';
+ echo '<h2>Beskrivelse</h2><p><label><input type="checkbox" name="save_description" value="1" '.checked(!$product->get_description()&&!empty($data['description']),true,false).'> Gem denne beskrivelse</label></p>';
+ echo '<textarea name="description" rows="8" style="width:100%">'.esc_textarea($data['description']).'</textarea>';
+ echo '<h2>Produktbillede</h2>';
+ if($product->get_image_id())echo '<p>Produktet har allerede et billede. Eksisterende billede overskrives ikke.</p>';
+ elseif(empty($data['images']))echo '<p>Intet egnet DCS-billede fundet.</p>';
+ else{
+  echo '<p>Vælg ét billede (kun billeder fra DCS).</p><div style="display:flex;gap:14px;flex-wrap:wrap">';
+  foreach($data['images'] as $i=>$url)echo '<label style="display:block;border:1px solid #ddd;padding:8px"><input type="radio" name="image_index" value="'.(int)$i.'"><img src="'.esc_url($url).'" alt="" style="display:block;width:130px;height:130px;object-fit:contain"></label>';
+  echo '</div>';
+ }
+ echo '<h2>Specifikationer</h2><p><label><input type="checkbox" name="save_specs" value="1" '.checked(!get_post_meta($product->get_id(),'_tpm_specs',true)&&!empty($data['specs']),true,false).'> Gem specifikationerne nedenfor</label></p>';
+ echo '<p>Redigér eller fjern linjer. Format: én specifikation pr. linje som Navn | Værdi.</p><textarea name="specs" rows="12" style="width:100%">';
+ foreach($data['specs'] as $spec)echo esc_textarea($spec['name'].' | '.$spec['value'])."\n";
+ echo '</textarea><p><button class="button button-primary button-large">Godkend og gem valgte oplysninger</button></p></div></form></div>';
+}
+function tpm_dcs_review_save(){
+ if(!current_user_can('manage_woocommerce'))wp_die('Ingen adgang.');
+ check_admin_referer('tpm_dcs_review_save');
+ $data=tpm_dcs_review_data();if(!$data)wp_die('Forhåndsvisningen er udløbet.');
+ global $wpdb;$table=tpm_dcs_table();
+ $row=$wpdb->get_row($wpdb->prepare("SELECT product_id FROM $table WHERE id=%d",(int)$data['row_id']));
+ if(!$row||(int)$row->product_id!==(int)$data['product_id'])wp_die('Produktets tilknytning er ændret.');
+ $product=wc_get_product($data['product_id']);if(!$product)wp_die('Produktet findes ikke.');
+ $changed=0;
+ if(!empty($_POST['save_description'])&&!$product->get_description()){
+  $description=wp_kses_post(wp_unslash($_POST['description']??''));
+  if(trim(wp_strip_all_tags($description))!==''){$product->set_description($description);$changed++;}
+ }
+ if(!$product->get_image_id()&&isset($_POST['image_index'])){
+  $index=absint($_POST['image_index']);$url=$data['images'][$index]??'';
+  $host=strtolower((string)wp_parse_url($url,PHP_URL_HOST));
+  if($url&&preg_match('/(^|\\.)dcs\\.dk$/',$host)&&wp_http_validate_url($url)){
+   $image_id=tpm_import_image_url($url,$product->get_id());
+   if($image_id){$product->set_image_id($image_id);$changed++;}
+  }
+ }
+ if(!empty($_POST['save_specs'])&&!get_post_meta($product->get_id(),'_tpm_specs',true)){
+  $lines=preg_split('/\\r\\n|\\r|\\n/',wp_unslash($_POST['specs']??''));$specs=[];
+  foreach(array_slice($lines,0,40) as $line){
+   $parts=explode('|',$line,2);if(count($parts)!==2)continue;
+   $name=sanitize_text_field(trim($parts[0]));$value=sanitize_text_field(trim($parts[1]));
+   if($name!==''&&$value!=='')$specs[]=['name'=>mb_substr($name,0,100),'value'=>mb_substr($value,0,500)];
+  }
+  if($specs){update_post_meta($product->get_id(),'_tpm_specs',$specs);$changed++;}
+ }
+ $product->save();update_post_meta($product->get_id(),'_tpm_supplier_url',$data['url']);
+ $token=sanitize_text_field(wp_unslash($_POST['token']??''));
+ delete_transient('tpm_dcs_review_'.get_current_user_id().'_'.$token);
+ wp_safe_redirect(add_query_arg(['page'=>'terttus-suppliers','dcs_enriched'=>$changed],admin_url('admin.php')).'#tpm-dcs-catalog');exit;
+}
+add_action('admin_post_tpm_dcs_review_save','tpm_dcs_review_save');
 /* Published-only feed sync: scans the supplier file in bounded cron batches,
    and never creates staging rows or changes storefront selling prices. */
 function tpm_dcs_active_sync_start($manual=false){
