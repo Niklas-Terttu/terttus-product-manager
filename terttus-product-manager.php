@@ -2,12 +2,12 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.10.8
+Version: 1.10.9
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.10.8');
+define('TPM_VERSION','1.10.9');
 define('TPM_GITHUB_REPO','Niklas-Terttu/terttus-product-manager');
 define('TPM_PLUGIN_BASENAME',plugin_basename(__FILE__));
 require_once __DIR__.'/includes/dcs-catalog.php';
@@ -369,8 +369,8 @@ function tpm_supplier_single_availability(){
  $dcs=(int)get_post_meta($product->get_id(),'_tpm_dcs_stock',true);
  $remote=(int)get_post_meta($product->get_id(),'_tpm_remote_stock_qty',true);
  $is_dcs=(bool)get_post_meta($product->get_id(),'_tpm_dcs_sku',true);
- if($own>0){$label='På eget lager';$detail='';}
- elseif($is_dcs&&$dcs>0){$label='På lager hos leverandør';$days=max(0,(int)get_post_meta($product->get_id(),'_tpm_dcs_lead_days',true));$detail=$days>0?'Forventet levering fra leverandør: ca. '.$days.' dage':'Leveringstid oplyses ved bestilling';}
+ if($own>0){$label='På lager - 1-2 dages levering';$detail='';}
+ elseif($is_dcs&&$dcs>0){$label='På lager - 1-2 dages levering';$detail='';}
  elseif($remote>0){$label='På fjernlager';$days=max(0,(int)get_post_meta($product->get_id(),'_tpm_dcs_remote_days',true));$detail=$days>0?'Forventet levering fra fjernlager: ca. '.$days.' dage':'Leveringstid oplyses ved bestilling';}
  elseif(!$product->is_in_stock()){$label='Ikke på lager';$detail='';}
  elseif($is_dcs){$label='Lagerstatus afventer opdatering';$detail='';}
