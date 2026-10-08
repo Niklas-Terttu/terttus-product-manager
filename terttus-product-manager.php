@@ -2,12 +2,12 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.8.3
+Version: 1.8.4
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.8.3');
+define('TPM_VERSION','1.8.4');
 define('TPM_GITHUB_REPO','Niklas-Terttu/terttus-product-manager');
 define('TPM_PLUGIN_BASENAME',plugin_basename(__FILE__));
 
@@ -222,8 +222,19 @@ function tpm_dcs_csv_test(){
   set_transient('tpm_dcs_csv_result_'.get_current_user_id(),['error'=>'Linket skal være en HTTPS-adresse på dcs.dk.'],5*MINUTE_IN_SECONDS);
  }else{
   update_option('tpm_dcs_csv_url',$url,false);
-  $response=wp_safe_remote_get($url,['timeout'=>30,'redirection'=>2,'limit_response_size'=>262144,'headers'=>['Accept'=>'text/csv,text/plain,*/*','User-Agent'=>'Terttus-Commerce/'.TPM_VERSION]]);
-  if(is_wp_error($response))$result=['error'=>'Forbindelsesfejl: '.$response->get_error_message()];
+  $current_url=$url;$redirects=[];$response=null;
+  for($hop=0;$hop<4;$hop++){
+   $response=wp_safe_remote_get($current_url,['timeout'=>30,'redirection'=>0,'limit_response_size'=>262144,'headers'=>['Accept'=>'text/csv,text/plain,*/*','User-Agent'=>'Terttus-Commerce/'.TPM_VERSION]]);
+   if(is_wp_error($response))break;
+   $status=wp_remote_retrieve_response_code($response);
+   if(!in_array($status,[301,302,303,307,308],true))break;
+   $location=wp_remote_retrieve_header($response,'location');
+   $next=$location?WP_Http::make_absolute_url($location,$current_url):'';
+   if(!$next||!tpm_dcs_csv_url_valid($next)){$response=new WP_Error('dcs_redirect','DCS viderestiller til et andet eller ugyldigt domæne.');break;}
+   $redirects[]=['status'=>$status,'path'=>(string)wp_parse_url($next,PHP_URL_PATH)];
+   $current_url=$next;
+  }
+  if(is_wp_error($response))$result=['error'=>'Forbindelsesfejl: '.$response->get_error_message(),'redirects'=>$redirects];
   else{
    $code=wp_remote_retrieve_response_code($response);
    if($code!==200)$result=['error'=>'DCS returnerede HTTP '.$code.'. Kontrollér IP-lås, link og at filen er klar.'];
@@ -236,7 +247,8 @@ function tpm_dcs_csv_test(){
     $first='';foreach($lines as $line){if(trim($line)!==''){$first=$line;break;}}
     $delimiter=';';$max=0;foreach([';',",","\\t",'|'] as $candidate){$count=count(str_getcsv($first,$candidate,'"'));if($count>$max){$max=$count;$delimiter=$candidate;}}
     $rows=[];foreach($lines as $line){if(trim($line)==='')continue;$rows[]=str_getcsv($line,$delimiter,'"');if(count($rows)>=6)break;}
-    $diagnostics=['http'=>200,'content_type'=>$type?:'(ikke oplyst)','bytes'=>strlen($body),'delimiter'=>$delimiter==="\\t"?'TAB':$delimiter,'columns'=>$max,'html'=>$looks_html];
+    $html_type='';if($looks_html){$low=strtolower($body);if(strpos($low,'login')!==false||strpos($low,'log ind')!==false)$html_type='Mulig login-side';elseif(strpos($low,'access denied')!==false||strpos($low,'forbidden')!==false||strpos($low,'adgang nægtet')!==false)$html_type='Mulig adgangsfejl';elseif(strpos($low,'pricelist')!==false||strpos($low,'prisfil')!==false)$html_type='Mulig prisfil-/informationsside';else $html_type='Ukendt HTML-side';}
+    $diagnostics=['http'=>200,'content_type'=>$type?:'(ikke oplyst)','bytes'=>strlen($body),'delimiter'=>$delimiter==="\\t"?'TAB':$delimiter,'columns'=>$max,'html'=>$looks_html,'html_type'=>$html_type,'final_path'=>(string)wp_parse_url($current_url,PHP_URL_PATH),'redirects'=>$redirects];
     if($looks_html)$result=['error'=>'DCS returnerede en HTML-side i stedet for en CSV-fil. Kontrollér at linket peger direkte på prisfilen, og at den er klar.','diagnostics'=>$diagnostics];
     elseif(!$rows||count($rows[0])<2)$result=['error'=>'Svaret kunne ikke fortolkes som en CSV med flere kolonner. Se tekniske oplysninger nedenfor.','diagnostics'=>$diagnostics];
     else $result=['headers'=>array_shift($rows),'rows'=>$rows,'partial'=>strlen($body)>=262144,'diagnostics'=>$diagnostics];
@@ -257,6 +269,10 @@ function tpm_suppliers(){
  echo '<form method="post" action="'.esc_url(admin_url('admin-post.php')).'">'.wp_nonce_field('tpm_dcs_csv_test','_wpnonce',true,false).'<input type="hidden" name="action" value="tpm_dcs_csv_test"><label for="tpm-dcs-csv-url"><strong>Privat DCS HTTPS-link</strong></label><p><input id="tpm-dcs-csv-url" type="url" name="dcs_csv_url" required value="'.esc_attr($csv_url).'" style="width:100%;max-width:800px" autocomplete="off" spellcheck="false"></p><button type="submit" class="button button-primary">Test forbindelse og vis CSV</button></form><p class="description">Linket gemmes som en privat WordPress-indstilling og vises kun til administratorer med WooCommerce-adgang. Del ikke linket offentligt.</p>';
  if(is_array($csv_result)){
   if(!empty($csv_result['diagnostics'])){$d=$csv_result['diagnostics'];echo '<p class="description"><strong>Teknisk svar:</strong> HTTP '.esc_html($d['http']).' · Content-Type: '.esc_html($d['content_type']).' · Modtaget: '.esc_html($d['bytes']).' bytes · Skilletegn: '.esc_html($d['delimiter']).' · Kolonner: '.esc_html($d['columns']).($d['html']?' · HTML-svar':'').'</p>';}
+  if(!empty($csv_result['diagnostics'])){$d=$csv_result['diagnostics'];echo '<p class="description"><strong>Slutsti:</strong> '.esc_html($d['final_path']??''). ' · <strong>HTML-type:</strong> '.esc_html($d['html_type']??'Ikke HTML').'</p>';}
+  $redirect_list=$csv_result['diagnostics']['redirects']??($csv_result['redirects']??[]);
+  if($redirect_list){echo '<p class="description"><strong>Viderestillinger:</strong> ';foreach($redirect_list as $step)echo esc_html($step['status'].' → '.$step['path']).' ';echo '</p>';}
+  else echo '<p class="description">Ingen registrerede HTTP-viderestillinger.</p>';
   if(isset($csv_result['error']))echo '<div class="notice notice-error inline"><p>'.esc_html($csv_result['error']).'</p></div>';
   else{
    echo '<div class="notice notice-success inline"><p>Forbindelsen virker. CSV-kolonnerne blev genkendt.</p></div><div style="overflow-x:auto"><table class="widefat striped"><thead><tr>';
