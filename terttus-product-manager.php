@@ -2,12 +2,12 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.8.1
+Version: 1.8.2
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.8.1');
+define('TPM_VERSION','1.8.2');
 define('TPM_GITHUB_REPO','Niklas-Terttu/terttus-product-manager');
 define('TPM_PLUGIN_BASENAME',plugin_basename(__FILE__));
 
@@ -207,10 +207,60 @@ function tpm_check_server_ip(){
  wp_safe_redirect(admin_url('admin.php?page=terttus-suppliers#tpm-server-ip'));exit;
 }
 add_action('admin_post_tpm_check_server_ip','tpm_check_server_ip');
+function tpm_dcs_csv_url_valid($url){
+ if(!filter_var($url,FILTER_VALIDATE_URL))return false;
+ $parts=wp_parse_url($url);
+ if(!is_array($parts)||strtolower($parts['scheme']??'')!=='https')return false;
+ $host=strtolower(rtrim($parts['host']??'','.'));
+ return $host==='dcs.dk'||substr($host,-7)==='.dcs.dk';
+}
+function tpm_dcs_csv_test(){
+ if(!current_user_can('manage_woocommerce'))wp_die('Ingen adgang.');
+ check_admin_referer('tpm_dcs_csv_test');
+ $url=trim((string)wp_unslash($_POST['dcs_csv_url']??''));
+ if(!tpm_dcs_csv_url_valid($url)){
+  set_transient('tpm_dcs_csv_result_'.get_current_user_id(),['error'=>'Linket skal være en HTTPS-adresse på dcs.dk.'],5*MINUTE_IN_SECONDS);
+ }else{
+  update_option('tpm_dcs_csv_url',$url,false);
+  $response=wp_safe_remote_get($url,['timeout'=>30,'redirection'=>2,'limit_response_size'=>262144,'headers'=>['Accept'=>'text/csv,text/plain,*/*','User-Agent'=>'Terttus-Commerce/'.TPM_VERSION]]);
+  if(is_wp_error($response))$result=['error'=>'Forbindelsesfejl: '.$response->get_error_message()];
+  else{
+   $code=wp_remote_retrieve_response_code($response);
+   if($code!==200)$result=['error'=>'DCS returnerede HTTP '.$code.'. Kontrollér IP-lås, link og at filen er klar.'];
+   else{
+    $body=wp_remote_retrieve_body($response);
+    $lines=preg_split('/\\r\\n|\\n|\\r/',$body);
+    $rows=[];
+    foreach($lines as $line){if(trim($line)==='')continue;$rows[]=str_getcsv($line,';','"');if(count($rows)>=6)break;}
+    if(!$rows||count($rows[0])<2)$result=['error'=>'Filen blev hentet, men CSV-kolonner kunne ikke genkendes. Kontrollér skilletegnet.'];
+    else $result=['headers'=>array_shift($rows),'rows'=>$rows,'partial'=>strlen($body)>=262144];
+   }
+  }
+  set_transient('tpm_dcs_csv_result_'.get_current_user_id(),$result,10*MINUTE_IN_SECONDS);
+ }
+ wp_safe_redirect(admin_url('admin.php?page=terttus-suppliers#tpm-dcs-csv'));exit;
+}
+add_action('admin_post_tpm_dcs_csv_test','tpm_dcs_csv_test');
 function tpm_suppliers(){
  tpm_admin_head('Leverandører','Overblik over de leverandører, der er knyttet til dine varer.');
  $products=wc_get_products(['limit'=>-1,'status'=>['publish','draft']]);$sup=[];
  foreach($products as$p){$name=trim((string)get_post_meta($p->get_id(),'_tpm_supplier',true));if(!$name)continue;if(!isset($sup[$name]))$sup[$name]=['count'=>0,'value'=>0];$sup[$name]['count']++;$sup[$name]['value']+=(float)get_post_meta($p->get_id(),'_tpm_cost',true)*max(0,(int)$p->get_stock_quantity());}
+ $csv_url=get_option('tpm_dcs_csv_url','');
+ $csv_result=get_transient('tpm_dcs_csv_result_'.get_current_user_id());
+ echo '<section id="tpm-dcs-csv" class="tpm-card" style="margin:18px 0 24px"><h2>DCS-prisfil · forbindelsestest</h2><p>Indsæt dit private DCS-prisfillink. WordPress-serveren henter et begrænset udsnit og viser kolonner og op til fem varer. Der importeres eller ændres ingen produkter.</p>';
+ echo '<form method="post" action="'.esc_url(admin_url('admin-post.php')).'">'.wp_nonce_field('tpm_dcs_csv_test','_wpnonce',true,false).'<input type="hidden" name="action" value="tpm_dcs_csv_test"><label for="tpm-dcs-csv-url"><strong>Privat DCS HTTPS-link</strong></label><p><input id="tpm-dcs-csv-url" type="url" name="dcs_csv_url" required value="'.esc_attr($csv_url).'" style="width:100%;max-width:800px" autocomplete="off" spellcheck="false"></p><button type="submit" class="button button-primary">Test forbindelse og vis CSV</button></form><p class="description">Linket gemmes som en privat WordPress-indstilling og vises kun til administratorer med WooCommerce-adgang. Del ikke linket offentligt.</p>';
+ if(is_array($csv_result)){
+  if(isset($csv_result['error']))echo '<div class="notice notice-error inline"><p>'.esc_html($csv_result['error']).'</p></div>';
+  else{
+   echo '<div class="notice notice-success inline"><p>Forbindelsen virker. CSV-kolonnerne blev genkendt.</p></div><div style="overflow-x:auto"><table class="widefat striped"><thead><tr>';
+   foreach($csv_result['headers'] as $v)echo '<th>'.esc_html($v).'</th>';
+   echo '</tr></thead><tbody>';
+   foreach($csv_result['rows'] as $row){echo '<tr>';foreach($csv_result['headers'] as $i=>$header)echo '<td>'.esc_html($row[$i]??'').'</td>';echo '</tr>';}
+   echo '</tbody></table></div>';
+   if(!empty($csv_result['partial']))echo '<p class="description">Forhåndsvisningen er begrænset til de første 256 KB af filen.</p>';
+  }
+ }
+ echo '</section>';
  $ip_result=get_transient('tpm_ip_result_'.get_current_user_id());
  echo '<section id="tpm-server-ip" class="tpm-card" style="margin:18px 0 24px"><h2>Serverens udgående IPv4</h2><p>Kontrollér den offentlige IPv4, som WordPress bruger til udgående HTTPS-forespørgsler. Brug den til DCS IP-lås, hvis DCS-prisfilen hentes fra samme server.</p>';
  if(is_array($ip_result)){
