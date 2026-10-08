@@ -2,12 +2,12 @@
 /*
 Plugin Name: Terttus Product Manager
 Description: Moderne produktstyring oven på WooCommerce.
-Version: 1.10.7
+Version: 1.10.8
 Author: Terttus
 Requires PHP: 7.4
 */
 if(!defined('ABSPATH'))exit;
-define('TPM_VERSION','1.10.7');
+define('TPM_VERSION','1.10.8');
 define('TPM_GITHUB_REPO','Niklas-Terttu/terttus-product-manager');
 define('TPM_PLUGIN_BASENAME',plugin_basename(__FILE__));
 require_once __DIR__.'/includes/dcs-catalog.php';
@@ -361,6 +361,26 @@ function tpm_remote_stock_text($product){
 }
 add_filter('woocommerce_get_availability_text',function($text,$product){if($product&&$product->managing_stock()&&(int)$product->get_stock_quantity()>0)return $text;$remote=tpm_remote_stock_text($product);return $remote?:$text;},20,2);
 add_filter('woocommerce_product_is_in_stock',function($in_stock,$product){return tpm_remote_stock_text($product)?true:$in_stock;},20,2);
+function tpm_supplier_single_availability(){
+ if(!function_exists('is_product')||!is_product())return;
+ global $product;
+ if(!$product instanceof WC_Product)return;
+ $own=$product->managing_stock()?(int)$product->get_stock_quantity():0;
+ $dcs=(int)get_post_meta($product->get_id(),'_tpm_dcs_stock',true);
+ $remote=(int)get_post_meta($product->get_id(),'_tpm_remote_stock_qty',true);
+ $is_dcs=(bool)get_post_meta($product->get_id(),'_tpm_dcs_sku',true);
+ if($own>0){$label='På eget lager';$detail='';}
+ elseif($is_dcs&&$dcs>0){$label='På lager hos leverandør';$days=max(0,(int)get_post_meta($product->get_id(),'_tpm_dcs_lead_days',true));$detail=$days>0?'Forventet levering fra leverandør: ca. '.$days.' dage':'Leveringstid oplyses ved bestilling';}
+ elseif($remote>0){$label='På fjernlager';$days=max(0,(int)get_post_meta($product->get_id(),'_tpm_dcs_remote_days',true));$detail=$days>0?'Forventet levering fra fjernlager: ca. '.$days.' dage':'Leveringstid oplyses ved bestilling';}
+ elseif(!$product->is_in_stock()){$label='Ikke på lager';$detail='';}
+ elseif($is_dcs){$label='Lagerstatus afventer opdatering';$detail='';}
+ else{return;}
+ echo '<div class="tpm-single-availability" style="margin:12px 0 18px;font-size:14px;line-height:1.5"><strong>'.esc_html($label).'</strong>';
+ if($detail)echo '<div style="color:#596a73;font-size:13px">'.esc_html($detail).'</div>';
+ echo '</div>';
+}
+add_action('woocommerce_single_product_summary','tpm_supplier_single_availability',25);
+
 function tpm_import_image_url($url,$post_id=0){$url=esc_url_raw(trim($url));if(!$url||!wp_http_validate_url($url))return 0;require_once ABSPATH.'wp-admin/includes/file.php';require_once ABSPATH.'wp-admin/includes/media.php';require_once ABSPATH.'wp-admin/includes/image.php';$tmp=download_url($url,20);if(is_wp_error($tmp))return 0;$path=(string)parse_url($url,PHP_URL_PATH);$name=sanitize_file_name(basename($path));if(!$name||strpos($name,'.')===false)$name='product-image.jpg';$file=['name'=>$name,'tmp_name'=>$tmp];$id=media_handle_sideload($file,$post_id);if(is_wp_error($id)){@unlink($tmp);return 0;}return (int)$id;}
 function tpm_store_timezone(){return new DateTimeZone('Europe/Copenhagen');}
 function tpm_sale_term_id(){
