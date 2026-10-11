@@ -1,5 +1,12 @@
 # Terttus Commerce
 
+## 1.10.11 – Dansk datoformat
+- Tilbudsperiodens start- og slutdato vises og indtastes i dansk format: `DD-MM-ÅÅÅÅ TT:MM` (24-timers ur).
+- Tidspunkter fortolkes i tidszonen Europe/Copenhagen.
+- Ugyldige datoer og slutdato før startdato afvises i stedet for at slette tilbudsperioden.
+- Eksempel: `30-10-2026 23:09`. Native browser-datovælger er erstattet med et tekstfelt for at sikre ens dansk visning på tværs af browserindstillinger.
+
+
 ## 1.10.10 – Moms på salgs- og tilbudspriser
 - Produktmanagerens salgspris og tilbudspris indtastes og vises altid **inklusive moms**.
 - Hvis WooCommerce er sat til at indtaste priser eksklusive moms, omregner produktmanageren begge beløb til WooCommerce-lagringspriser ved gemning og tilbage til bruttopriser ved redigering. WooCommerce's gældende produktafgiftsklasse og satser anvendes.
