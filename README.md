@@ -1,5 +1,13 @@
 # Terttus Commerce
 
+## 1.10.10 – Moms på salgs- og tilbudspriser
+- Produktmanagerens salgspris og tilbudspris indtastes og vises altid **inklusive moms**.
+- Hvis WooCommerce er sat til at indtaste priser eksklusive moms, omregner produktmanageren begge beløb til WooCommerce-lagringspriser ved gemning og tilbage til bruttopriser ved redigering. WooCommerce's gældende produktafgiftsklasse og satser anvendes.
+- Hvis WooCommerce er sat til priser inklusive moms, gemmes beløbene uden ekstra omregning.
+- Eksisterende produkter ændres ikke automatisk. Åbn et berørt produkt, indtast den ønskede bruttopris og tilbudspris på ny og gem. Kontrollér derefter visningen i webshoppen og ryd eventuelt cache.
+- Test begge prisindstillinger på et testprodukt før masseopdatering; prisvisning kan afhænge af WooCommerce's øvrige momsopsætning.
+
+
 Et samlet og mere overskueligt administrationslag oven på WooCommerce til Terttus.dk.
 
 ## 1.1.0
