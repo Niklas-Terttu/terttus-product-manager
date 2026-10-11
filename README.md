@@ -1,5 +1,10 @@
 # Terttus Commerce
 
+## 1.10.12 – Kategorier foldet sammen som standard
+- Kategoritræet starter med alle underkategorier foldet sammen ved indlæsning.
+- Manuel udfoldning, Fold alle ud, Fold alle sammen og søgning fungerer fortsat.
+
+
 ## 1.10.11 – Dansk datoformat
 - Tilbudsperiodens start- og slutdato vises og indtastes i dansk format: `DD-MM-ÅÅÅÅ TT:MM` (24-timers ur).
 - Tidspunkter fortolkes i tidszonen Europe/Copenhagen.
