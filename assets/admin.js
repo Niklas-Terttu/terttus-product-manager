@@ -138,5 +138,7 @@ jQuery(function($){
  $('.tpm-cat-collapse-all').on('click',function(){$('#tpm-category-tree .tpm-cat-node>.tpm-cat-level').addClass('is-collapsed');$('#tpm-category-tree .tpm-cat-collapse:not(.is-empty)').text('▸');});
  $('.tpm-cat-expand-all').on('click',function(){$('#tpm-category-tree .tpm-cat-level').removeClass('is-collapsed');$('#tpm-category-tree .tpm-cat-collapse:not(.is-empty)').text('▾');});
  $('#tpm-cat-search').on('input',function(){let q=$(this).val().trim().toLowerCase();$('#tpm-category-tree .tpm-cat-node').each(function(){let $n=$(this),hit=!q||String($n.data('name')).toLowerCase().includes(q)||$n.find('>.tpm-cat-level>.tpm-cat-node').filter(function(){return String($(this).data('name')).toLowerCase().includes(q);}).length;$n.toggleClass('is-search-hidden',!hit);});if(q)$('.tpm-cat-level').removeClass('is-collapsed');});
+ // Start with category branches collapsed; searching and expand buttons still work.
+ $('.tpm-cat-collapse-all').trigger('click');
  initSortable();
 });
